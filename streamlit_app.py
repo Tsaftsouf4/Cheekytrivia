@@ -13,7 +13,7 @@ shuffle_answers = st.checkbox("🔀 Shuffle answers inside each question?", valu
 required_cols = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
 def build_quiz(df, shuffle=False):
-    sample = df.sample(n=min(15, len(df)), random_state=42).reset_index(drop=True)
+    sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     import random as _r
     quiz = []
     for _, row in sample.iterrows():
