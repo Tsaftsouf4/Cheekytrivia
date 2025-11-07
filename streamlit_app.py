@@ -63,6 +63,6 @@ if uploaded:
         if st.button("🎲 New Random 15"):
             if "quiz" in st.session_state:
                 del st.session_state["quiz"]
-            st.experimental_rerun()
+            st.rerun()
 else:
     st.info("Upload an Excel with columns: #, Question, Answer 1–4, Correct Answer.")
