@@ -1,9 +1,24 @@
-
-
-
 # ============================
 # Cheeky Gamblers Trivia App
 # ============================
+import streamlit as st
+
+# ---- ADMIN PASSWORD PROTECTION ----
+ADMIN_PASSWORD = "CHEEKYADMIN123"
+
+st.set_page_config(page_title="Cheeky Gamblers Trivia", page_icon="cheeky_logo.png", layout="wide")
+
+# Ανιχνεύει αν ο χρήστης προσπαθεί να ανοίξει το admin view
+query_params = st.experimental_get_query_params()
+if "view" in query_params and query_params["view"][0] == "admin":
+    st.title("🔒 Admin Access")
+    password = st.text_input("Enter admin password:", type="password")
+
+    if password != ADMIN_PASSWORD:
+        st.warning("⚠️ Λάθος κωδικός ή δεν έχεις πρόσβαση.")
+        st.stop()
+    else:
+        st.success("✅ Καλωσήρθες στο Admin Panel!")
 
 import streamlit as st
 import pandas as pd
