@@ -146,21 +146,7 @@ with cA:
 with cB:
     st.metric("Round length", f"{ROUND_SECONDS}s")
 
-remaining = None
-locked = False
-if st.session_state.round_deadline:
-    remaining = int(st.session_state.round_deadline - _now_ts())
-    if remaining <= 0:
-        remaining = 0
-        locked = True
 
-with cC:
-    if st.session_state.round_deadline:
-        st.markdown(f"<div class='timer'>⏱️ {remaining}s</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div class='timer'>⏱️ —</div>", unsafe_allow_html=True)
-
-st.markdown("---")
 
 # ------------------ Questions ------------------
 answers = []
