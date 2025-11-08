@@ -5,12 +5,12 @@
 import streamlit as st
 import pandas as pd
 import random
-from datetime import datetime, timezone
+from datetime import datetime
 
 # ------------------ Page / Theme ------------------
 st.set_page_config(
     page_title="Cheeky Gamblers Trivia",
-    page_icon="cheeky_logo.png",   # βάλε το αρχείο στο root του repo
+    page_icon="cheeky_logo.png",   # Βάλε το αρχείο στο root του repo
     layout="wide",
 )
 
@@ -18,9 +18,9 @@ BRAND_GOLD = "#FFD60A"
 
 st.markdown(f"""
 <style>
-/* Δώσε χώρο επάνω για OBS/browser */
+/* Δώσε χώρο επάνω για OBS/browser ώστε να μη κόβεται */
 .block-container {{
-    padding-top: 8rem;            /* ↑ αύξησέ το αν θέλεις (π.χ. 10rem) */
+    padding-top: 8rem;         /* ↑ ρύθμισε το (π.χ. 10rem) αν θέλεις περισσότερο */
     padding-bottom: 2rem;
 }}
 
@@ -32,10 +32,8 @@ st.markdown(f"""
 .app-title {{ font-size:1.9rem; font-weight:800; margin:0; }}
 .logo img {{ height:38px; width:auto; }}
 
-/* Timer */
-.timer {{
-  font-size:2.0rem; font-weight:900; letter-spacing:.5px;
-}}
+/* Λίγο πιο καθαρά τα radios */
+.stRadio > div{{ gap:.5rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,28 +53,20 @@ with right:
 
 st.caption("15 random questions per round • Multiple choice • Stream-safe")
 
-# ------------------ Helpers ------------------
+# ------------------ Constants / Helpers ------------------
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
-ROUND_SECONDS = 60  # ⏱️ συνολικός χρόνος γύρου (άλλαξέ το όπως θες)
 
-def _now_ts() -> float:
-    return datetime.now(timezone.utc).timestamp()
-
-def _rerun():
-    if hasattr(st, "rerun"):
-        st.rerun()
-    else:
-        st.experimental_rerun()
-
-def build_quiz(df: pd.DataFrame, shuffle: bool = False):
-    """Φτιάχνει 15άδα από το Excel με optional shuffle στις επιλογές."""
+def build_quiz(df: pd.DataFrame):
+    """Φτιάχνει σετ 15 ερωτήσεων από το Excel, χωρίς shuffle στις επιλογές."""
     sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     quiz = []
     for _, r in sample.iterrows():
         opts = [r["Answer 1"], r["Answer 2"], r["Answer 3"], r["Answer 4"]]
-        if shuffle:
-            random.shuffle(opts)
-        quiz.append({"q": str(r["Question"]), "opts": opts, "correct": str(r["Correct Answer"])})
+        quiz.append({
+            "q": str(r["Question"]),
+            "opts": [str(x) for x in opts],
+            "correct": str(r["Correct Answer"])
+        })
     return quiz
 
 def add_score_row(player: str, score: int, total: int):
@@ -89,10 +79,15 @@ def add_score_row(player: str, score: int, total: int):
         {"timestamp": ts, "player": player or "Anonymous", "score": score, "total": total, "percent": percent}
     )
 
+def _rerun():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
 # ------------------ Sidebar ------------------
 with st.sidebar:
     player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba")
-    shuffle_answers = st.checkbox("🔀 Shuffle answers inside each question?", value=False)
     st.caption("Leaderboard αποθηκεύεται προσωρινά (session only).")
 
 # ------------------ Upload ------------------
@@ -122,31 +117,9 @@ if not all(c in df.columns for c in REQUIRED_COLS):
 
 # Δημιούργησε quiz μία φορά
 if "quiz" not in st.session_state:
-    st.session_state.quiz = build_quiz(df, shuffle=shuffle_answers)
+    st.session_state.quiz = build_quiz(df)
 
-# ------------------ Round Timer (Player only) ------------------
-if "round_deadline" not in st.session_state:
-    st.session_state.round_deadline = None  # unix ts ή None
-
-cA, cB, cC = st.columns([0.5, 0.25, 0.25])
-with cA:
-    b1, b2 = st.columns([0.55, 0.45])
-    with b1:
-        if st.session_state.round_deadline is None and st.button("▶️ Start round"):
-            st.session_state.round_deadline = _now_ts() + ROUND_SECONDS
-            _rerun()
-    with b2:
-        if st.button("🔁 Reset timer"):
-            st.session_state.round_deadline = None
-            # καθάρισε τυχόν επιλογές
-            for j in range(1, 16):
-                st.session_state.pop(f"q{j}", None)
-            _rerun()
-
-with cB:
-    st.metric("Round length", f"{ROUND_SECONDS}s")
-
-
+st.markdown("---")
 
 # ------------------ Questions ------------------
 answers = []
@@ -156,7 +129,6 @@ for i, item in enumerate(st.session_state.quiz, start=1):
         item["opts"],
         index=None,
         key=f"q{i}",
-        disabled=locked,        # κλειδώνει όταν ο χρόνος μηδενίσει
     )
     answers.append(choice)
 
@@ -164,29 +136,28 @@ for i, item in enumerate(st.session_state.quiz, start=1):
 col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("✅ Submit", disabled=(st.session_state.round_deadline is None)):
-        if locked:
-            st.warning("⏳ Ο χρόνος έληξε! Ο γύρος έκλεισε.")
-        else:
-            score = sum((ans == q["correct"]) for ans, q in zip(answers, st.session_state.quiz))
-            total = len(st.session_state.quiz)
-            st.subheader(f"Score this round: {score}/{total}")
-            if score == total:
-                st.success("Perfect score! Claim your $250! 🏆")
-            add_score_row(player, score, total)
-            with st.expander("📘 Show answers"):
-                for j, (ans, q) in enumerate(zip(answers, st.session_state.quiz), start=1):
-                    st.markdown(f"**{j}. {q['q']}**")
-                    st.write(f"Your answer: {ans if ans else '—'}")
-                    st.write(f"Correct: {q['correct']}")
-                    st.write("---")
+    if st.button("✅ Submit"):
+        score = sum((ans == q["correct"]) for ans, q in zip(answers, st.session_state.quiz))
+        total = len(st.session_state.quiz)
+        st.subheader(f"Score this round: {score}/{total}")
+        if score == total:
+            st.success("Perfect score! Claim your $250! 🏆")
+
+        add_score_row(player, score, total)
+
+        with st.expander("📘 Show answers"):
+            for j, (ans, q) in enumerate(zip(answers, st.session_state.quiz), start=1):
+                st.markdown(f"**{j}. {q['q']}**")
+                st.write(f"Your answer: {ans if ans else '—'}")
+                st.write(f"Correct: {q['correct']}")
+                st.write("---")
 
 with col2:
     if st.button("🎲 New Random 15"):
         # καθάρισε επιλογές & ξαναφτιάξε 15άδα
         for j in range(1, len(st.session_state.quiz)+1):
             st.session_state.pop(f"q{j}", None)
-        st.session_state.quiz = build_quiz(df, shuffle=shuffle_answers)
+        st.session_state.quiz = build_quiz(df)
         _rerun()
 
 # ------------------ Leaderboard (session) ------------------
