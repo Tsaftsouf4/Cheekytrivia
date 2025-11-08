@@ -146,13 +146,6 @@ with cA:
 with cB:
     st.metric("Round length", f"{ROUND_SECONDS}s")
 
-# auto-refresh όσο τρέχει ο γύρος (χωρίς st.autorefresh)
-import time  # αν δεν υπάρχει ήδη επάνω
-if st.session_state.round_deadline:
-    time.sleep(1)   # περίμενε 1s
-    _rerun()        # ξανατρέξε το app (χρησιμοποιεί το helper σου)
-
-
 remaining = None
 locked = False
 if st.session_state.round_deadline:
