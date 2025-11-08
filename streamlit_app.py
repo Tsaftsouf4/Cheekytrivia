@@ -17,7 +17,7 @@ st.set_page_config(
 BRAND_GOLD = "#FFD60A"
 st.markdown(f"""
 <style>
-.block-container {{ padding-top: 1.4rem; padding-bottom: 2rem; }}
+.block-container {{ padding-top: 8rem; padding-bottom: 2rem; }}
 .badge {{
   display:inline-block; background:{BRAND_GOLD}; color:#000;
   padding:.28rem .6rem; border-radius:.55rem; font-weight:900; letter-spacing:.3px
