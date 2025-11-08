@@ -16,9 +16,7 @@ if "view" in query_params and query_params["view"][0] == "admin":
         st.stop()
     else:
         st.success("✅ Καλωσήρθες στο Admin Panel!")
-
-
-
+        
 # ============================
 # Cheeky Gamblers Trivia App
 # ============================
