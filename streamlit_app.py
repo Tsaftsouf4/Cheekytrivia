@@ -1,10 +1,4 @@
 import streamlit as st
-
-st.set_page_config(
-    page_title="Cheeky Gamblers Trivia",
-    page_icon="cheeky_logo.png",
-    layout="wide",
-)
 import pandas as pd
 import random, time
 from datetime import datetime, timedelta
