@@ -1,11 +1,11 @@
 # ==============================
-# Cheeky Gamblers Trivia (One-by-one + Shuffled options) — FIXED PROGRESS
+# Cheeky Gamblers Trivia (One-by-one + Shuffled options) — FIXED PROGRESS + 45s TIMER/LOCK
 # ==============================
 
 import streamlit as st
 import pandas as pd
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ------------------ Page / Theme ------------------
 st.set_page_config(
@@ -15,6 +15,7 @@ st.set_page_config(
 )
 
 BRAND_GOLD = "#FFD60A"
+QUESTION_TIME_LIMIT = 45  # seconds
 
 st.markdown(f"""
 <style>
@@ -85,6 +86,31 @@ def add_score_row(player: str, score: int, total: int):
         {"timestamp": ts, "player": player or "Anonymous", "score": score, "total": total, "percent": percent}
     )
 
+def _now_ts():
+    # UTC timestamp (float seconds)
+    return datetime.now(timezone.utc).timestamp()
+
+def _ensure_timer_for(cur_idx: int):
+    """Θέτει start time για την τρέχουσα ερώτηση αν δεν υπάρχει ήδη."""
+    key = f"q{cur_idx}_start"
+    if key not in st.session_state:
+        st.session_state[key] = _now_ts()
+
+def _time_remaining(cur_idx: int) -> int:
+    """Επιστρέφει υπολειπόμενα δευτερόλεπτα (>=0)."""
+    start = st.session_state.get(f"q{cur_idx}_start")
+    if start is None:
+        return QUESTION_TIME_LIMIT
+    elapsed = max(0, _now_ts() - start)
+    remaining = int(max(0, QUESTION_TIME_LIMIT - elapsed))
+    return remaining
+
+def _is_locked(cur_idx: int) -> bool:
+    """Κλειδώνει ΜΟΝΟ αν έληξε ο χρόνος ΚΑΙ δεν υπάρχει απάντηση."""
+    remaining = _time_remaining(cur_idx)
+    answered = st.session_state.get(f"q{cur_idx}") is not None
+    return (remaining <= 0) and (not answered)
+
 def _rerun():
     if hasattr(st, "rerun"):
         st.rerun()
@@ -101,7 +127,6 @@ uploaded = st.file_uploader("📂 Upload your Excel (.xlsx) file", type=["xlsx"]
 
 if uploaded is None:
     st.info("Upload an Excel with columns: #, Question, Answer 1–4, Correct Answer.")
-    # δείξε leaderboard αν υπάρχει
     if "leaderboard" in st.session_state and st.session_state.leaderboard:
         st.markdown("---")
         st.subheader("🏆 Leaderboard (session)")
@@ -117,10 +142,8 @@ except Exception as e:
     st.error(f"Could not read Excel: {e}")
     st.stop()
 
-# καθάρισε headers/NaN για σιγουριά
 df.columns = [str(c).strip() for c in df.columns]
 df = df.fillna("")
-
 missing = [c for c in REQUIRED_COLS if c not in df.columns]
 if missing:
     st.error(f"Missing columns: {missing}")
@@ -130,29 +153,52 @@ if missing:
 if "quiz" not in st.session_state:
     st.session_state.quiz = build_quiz(df)
     st.session_state.current_i = 1  # 1-based index
-    # καθάρισε τυχόν προηγούμενες απαντήσεις
     for j in range(1, len(st.session_state.quiz) + 1):
         st.session_state.pop(f"q{j}", None)
+        st.session_state.pop(f"q{j}_start", None)
 
 quiz = st.session_state.quiz
 total_q = len(quiz)
 cur = st.session_state.get("current_i", 1)
 cur = max(1, min(total_q, cur))
 
+# Βεβαιώσου ότι υπάρχει timer για την τρέχουσα
+_ensure_timer_for(cur)
+
 st.markdown("---")
 
-# ------------------ Render single question + LIVE progress (FIX) ------------------
+# ------------------ Render single question + LIVE progress ------------------
 q = quiz[cur - 1]
 st.subheader(f"Question {cur}/{total_q}")
 
-# Δίνουμε διαφορετικό key στο radio (temporary) και γράφουμε εμείς στο μόνιμο key.
-choice_temp = st.radio(q["q"], q["opts"], index=None, key=f"q{cur}_temp")
+# TIMER UI (remaining + progress)
+remaining = _time_remaining(cur)
+timer_cols = st.columns([0.5, 0.5])
+with timer_cols[0]:
+    st.write(f"⏳ Time left: **{remaining}s**")
+with timer_cols[1]:
+    st.progress(remaining / QUESTION_TIME_LIMIT, text=f"{remaining}s remaining")
 
-# Αν επιλέχθηκε κάτι, το σώζουμε μόνιμα στο session_state (ώστε να μετράει progress αμέσως)
+locked_now = _is_locked(cur)
+
+# Radio: κλειδωμένο αν έληξε & δεν έχει απάντηση
+choice_temp = st.radio(
+    q["q"],
+    q["opts"],
+    index=None,
+    key=f"q{cur}_temp",
+    disabled=locked_now
+)
+
+# Αν επιλέχθηκε κάτι, αποθήκευσέ το μόνιμα
 if choice_temp is not None:
     st.session_state[f"q{cur}"] = choice_temp
 
-# Υπολογισμός progress ΚΑΘΕ ΦΟΡΑ εδώ (ώστε να ανεβαίνει αμέσως)
+# Αν είναι κλειδωμένο χωρίς απάντηση, ενημέρωσε τον χρήστη
+if locked_now:
+    st.warning("⛔ Ο χρόνος τελείωσε για αυτή την ερώτηση. Οι απαντήσεις κλειδώθηκαν.")
+
+# Υπολογισμός progress
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 progress = answered / max(1, total_q)
 st.progress(progress, text=f"Answered {answered}/{total_q}")
@@ -165,19 +211,28 @@ nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
 with nav_prev:
     if st.button("⬅️ Previous", disabled=(cur == 1)):
         st.session_state.current_i = max(1, cur - 1)
+        _ensure_timer_for(st.session_state.current_i)
         _rerun()
 
 with nav_next:
-    # Next ενεργό μόνο αν απαντήθηκε η τρέχουσα
-    next_disabled = st.session_state.get(f"q{cur}") is None or cur == total_q
+    # Next ενεργό όταν:
+    # - έχει απαντηθεί η τρέχουσα, ή
+    # - έχει λήξει ο χρόνος χωρίς απάντηση (κλειδωμένη), και
+    # - δεν είμαστε στην τελευταία
+    current_answered = st.session_state.get(f"q{cur}") is not None
+    next_disabled = (not current_answered and not locked_now) or (cur == total_q)
     if st.button("➡️ Next", disabled=next_disabled):
         st.session_state.current_i = min(total_q, cur + 1)
+        _ensure_timer_for(st.session_state.current_i)
         _rerun()
 
 with nav_finish:
-    # Finish όταν έχουν απαντηθεί όλες
-    all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
-    if st.button("✅ Finish round", disabled=not all_answered):
+    # Finish όταν έχουν απαντηθεί ΟΛΕΣ ή έχουν λήξει (κλειδώσει) όσες δεν απαντήθηκαν
+    all_done_or_locked = all(
+        (st.session_state.get(f"q{j}") is not None) or _is_locked(j)
+        for j in range(1, total_q+1)
+    )
+    if st.button("✅ Finish round", disabled=not all_done_or_locked):
         answers = [st.session_state.get(f"q{j}") for j in range(1, total_q+1)]
         score = 0
         for j, ans in enumerate(answers, start=1):
@@ -203,10 +258,14 @@ st.markdown("---")
 col_new, _ = st.columns([0.3, 0.7])
 with col_new:
     if st.button("🎲 New Random 15"):
+        # καθάρισε απαντήσεις + timers
         for j in range(1, len(quiz)+1):
             st.session_state.pop(f"q{j}", None)
+            st.session_state.pop(f"q{j}_start", None)
+            st.session_state.pop(f"q{j}_temp", None)
         st.session_state.quiz = build_quiz(df)  # <-- ξανακάνει shuffle στις επιλογές
         st.session_state.current_i = 1
+        _ensure_timer_for(1)
         _rerun()
 
 # ------------------ Leaderboard (session) ------------------
