@@ -48,80 +48,117 @@ def rerun():
 # =============================================================================
 # CSS
 # =============================================================================
-st.markdown(
-    """
+st.markdown("""
 <style>
-/* Background */
+/* ===== GLOBAL BACKGROUND ===== */
 [data-testid="stAppViewContainer"] > .main {
-  background: linear-gradient(135deg, #0b0f14 0%, #111826 60%, #001a2c 100%);
+  background: linear-gradient(145deg, #0b0f14 0%, #111826 50%, #001a2c 100%);
   background-attachment: fixed;
 }
 body:before {
   content: "";
   position: fixed; inset: 0;
   background: url('cheeky_bg.jpg') center/cover no-repeat;
-  opacity: .15; pointer-events: none; z-index: -1;
+  opacity: .12; pointer-events: none; z-index: -1;
 }
 
-/* Layout spacing */
-.block-container { padding-top: 5rem; max-width: 1180px; }
+/* ===== BASE LAYOUT ===== */
+.block-container { padding-top: 4.5rem; max-width: 1200px; }
+h1,h2,h3,h4,h5,h6,p,div,span { font-family: 'Inter', sans-serif; }
 
-/* Neon panel + shadow box για progress που περιέχει το st.progress */
-.neon-panel {
-  border-radius: 18px;
-  padding: 20px 22px;
-  background: rgba(10, 14, 20, .68);
+/* ===== NEON BOX ===== */
+.neon-box {
+  border-radius: 16px;
+  background: rgba(20, 20, 28, 0.75);
+  border: 1px solid rgba(255, 214, 10, 0.25);
   box-shadow:
-    0 0 0 1px rgba(255,255,255,.04) inset,
-    0 0 28px rgba(255, 214, 10, .14),
-    0 0 48px rgba(255, 51, 204, .10);
+    0 0 20px rgba(255, 214, 10, 0.15),
+    0 0 40px rgba(255, 51, 204, 0.15),
+    inset 0 0 12px rgba(255, 214, 10, 0.08);
+  padding: 18px 22px;
+  margin-bottom: 16px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 
-/* Progress container "κουτί" */
+/* ===== PROGRESS WRAPPER ===== */
 .progress-box {
-  border-radius: 14px;
-  padding: 10px 12px 6px 12px;
-  background: rgba(0,0,0,.35);
-  box-shadow: inset 0 0 10px rgba(255,214,10,.18);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  padding: 10px 14px 4px 14px;
+  margin-bottom: 14px;
+  box-shadow: inset 0 0 12px rgba(255,214,10,.18);
 }
-
-/* Progress glow + gradient fill */
 [data-testid="stProgress"] > div > div {
   height: 10px;
   border-radius: 999px;
-  box-shadow: 0 0 16px rgba(255,214,10,.35);
   background: linear-gradient(90deg, #FFD60A, #FF33CC);
+  box-shadow: 0 0 10px rgba(255,214,10,.4);
 }
 
-/* Player tile */
+/* ===== PLAYER TILE ===== */
 .name-tile {
-  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
-  min-width: 160px; padding: .6rem 1rem; border-radius: 12px;
-  background: rgba(255, 214, 10, 0.10);
-  border: 1px solid rgba(255, 214, 10, 0.40);
-  box-shadow: 0 0 12px rgba(255, 214, 10, 0.28), inset 0 0 8px rgba(255, 214, 10, 0.15);
-  color: #fff; text-align: center;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 150px;
+  padding: .65rem 1rem;
+  border-radius: 10px;
+  background: rgba(255, 214, 10, 0.08);
+  border: 1px solid rgba(255, 214, 10, 0.4);
+  box-shadow: 0 0 8px rgba(255,214,10,0.25);
 }
-.name-tile .label { font-size: .70rem; font-weight: 600; letter-spacing: .8px; color: rgba(255,255,255,.75); margin-bottom: .15rem; }
-.name-tile .value { font-size: 1.2rem; font-weight: 800; color: #FFD60A; text-shadow: 0 0 6px rgba(255,214,10,.45); }
+.name-tile .label {
+  font-size: .75rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.65);
+  letter-spacing: .7px;
+  margin-bottom: 2px;
+}
+.name-tile .value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #FFD60A;
+  text-shadow: 0 0 6px rgba(255,214,10,0.5);
+}
 
-/* Question reveal animation */
-.q-reveal { animation: qslide .55s ease-out; color: #f1f4f8; }
+/* ===== QUESTION & TIMER ===== */
+.timer-box {
+  background: rgba(255,255,255,0.03);
+  padding: 10px 14px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 8px rgba(255,214,10,0.2);
+  margin-bottom: 12px;
+}
+.q-box {
+  background: rgba(255,255,255,0.02);
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 8px rgba(255,51,204,0.15);
+}
+.q-reveal {
+  animation: qslide .6s ease-out;
+  color: #fff;
+  font-size: 1.05rem;
+}
 @keyframes qslide {
-  0%   { transform: translateY(8px); opacity: 0; filter: drop-shadow(0 0 0 rgba(255,51,204,0)); }
-  60%  { transform: translateY(0);   opacity: 1; filter: drop-shadow(0 0 8px rgba(255,51,204,.45)); }
-  100% { filter: drop-shadow(0 0 0 rgba(255,51,204,0)); }
+  0% {opacity:0; transform:translateY(10px);}
+  100% {opacity:1; transform:translateY(0);}
 }
 
-/* Little badge */
-.badge { display:inline-block; background:#FFD60A; color:#000; padding:.32rem .7rem;
-  border-radius:.55rem; font-weight:900; letter-spacing:.3px }
+/* ===== BUTTON OVERRIDES ===== */
+div.stButton > button {
+  border-radius: 10px !important;
+  border: 1px solid rgba(255,214,10,0.25) !important;
+  background: linear-gradient(90deg,#FFD60A,#FF33CC) !important;
+  color: black !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 10px rgba(255,214,10,.3) !important;
+}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
+
 
 
 # =============================================================================
@@ -307,15 +344,27 @@ if time_up and not st.session_state.get(f"locked_{cur}", False):
 # =============================================================================
 # MAIN PANEL
 # =============================================================================
-st.markdown("<div class='neon-panel'>", unsafe_allow_html=True)
+st.markdown("<div class='neon-box'>", unsafe_allow_html=True)
 
-# Progress (μέσα σε κουτί)
+# Progress
 answered = sum(1 for j in range(1, total_q + 1) if st.session_state.get(f"q{j}") is not None)
 st.markdown("<div class='progress-box'>", unsafe_allow_html=True)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("---")
+# Timer + Question section
+st.markdown("<div class='timer-box'>", unsafe_allow_html=True)
+t1, t2 = st.columns([0.16, 0.84])
+with t1:
+    st.markdown(f"**⏱️ {remaining}s**")
+with t2:
+    st.progress(remaining / SECONDS_PER_Q)
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<div class='q-box'>", unsafe_allow_html=True)
+st.markdown(f"<div class='q-reveal'><h3 style='margin-top:0'>{q['q']}</h3></div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+
 
 # Ερώτηση + timer
 q = quiz[cur - 1]
