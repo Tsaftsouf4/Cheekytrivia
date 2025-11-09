@@ -1,5 +1,5 @@
 # ==============================
-# Cheeky Gamblers Trivia (One-by-one)
+# Cheeky Gamblers Trivia (One-by-one + Reveal options)
 # ==============================
 
 import streamlit as st
@@ -18,9 +18,9 @@ BRAND_GOLD = "#FFD60A"
 
 st.markdown(f"""
 <style>
-/* Δώσε χώρο επάνω για OBS/browser ώστε να μη κόβεται */
+/* Extra top space ώστε να μην "κόβεται" σε OBS/browser */
 .block-container {{
-    padding-top: 8rem;         /* ↑ ρύθμισε το (π.χ. 10rem) αν θέλεις περισσότερο */
+    padding-top: 8rem;     /* ↑ ρύθμισε αν θες περισσότερο (π.χ. 10rem) */
     padding-bottom: 2rem;
 }}
 
@@ -32,7 +32,7 @@ st.markdown(f"""
 .app-title {{ font-size:1.9rem; font-weight:800; margin:0; }}
 .logo img {{ height:38px; width:auto; }}
 
-/* Λίγο πιο καθαρά τα radios */
+/* Πιο καθαρά τα radios */
 .stRadio > div{{ gap:.5rem; }}
 </style>
 """, unsafe_allow_html=True)
@@ -57,7 +57,7 @@ st.caption("15 random questions per round • Multiple choice • Stream-safe")
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
 def build_quiz(df: pd.DataFrame):
-    """Φτιάχνει σετ 15 ερωτήσεων από το Excel (χωρίς shuffle)."""
+    """Φτιάχνει σετ 15 ερωτήσεων από το Excel (χωρίς shuffle στις επιλογές)."""
     sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     quiz = []
     for _, r in sample.iterrows():
@@ -115,13 +115,15 @@ if not all(c in df.columns for c in REQUIRED_COLS):
     st.error(f"Missing columns. Required: {REQUIRED_COLS}")
     st.stop()
 
-# Δημιούργησε quiz μία φορά
+# ------------------ Init quiz state ------------------
 if "quiz" not in st.session_state:
     st.session_state.quiz = build_quiz(df)
     st.session_state.current_i = 1  # 1-based index
     # καθάρισε τυχόν προηγούμενες απαντήσεις
     for j in range(1, len(st.session_state.quiz) + 1):
         st.session_state.pop(f"q{j}", None)
+    # για το "reveal μία-μία", κρατάμε πόσες επιλογές είναι ορατές για κάθε ερώτηση
+    st.session_state.visible_counts = {j: 1 for j in range(1, len(st.session_state.quiz) + 1)}
 
 quiz = st.session_state.quiz
 total_q = len(quiz)
@@ -137,9 +139,39 @@ st.markdown("---")
 
 # ------------------ Render single question ------------------
 q = quiz[cur - 1]
-st.subheader(f"Question {cur}/{total_q}")
-choice = st.radio(q["q"], q["opts"], index=None, key=f"q{cur}")
+visible_n = st.session_state.visible_counts.get(cur, 1)
+visible_n = max(1, min(4, visible_n))  # always 1..4
 
+st.subheader(f"Question {cur}/{total_q}")
+st.markdown(f"### ❓ {q['q']}")
+
+# ΜΟΝΟ όσες επιλογές έχουν αποκαλυφθεί
+opts_visible = q["opts"][:visible_n]
+
+# Επιλογή απάντησης (radio) με μόνο τις αποκαλυμμένες επιλογές
+choice = st.radio("Pick your answer:", opts_visible, index=None, key=f"q{cur}")
+
+# Κουμπί για επόμενη αποκάλυψη επιλογής
+reveal_col, reset_col = st.columns([0.28, 0.72])
+with reveal_col:
+    if visible_n < 4:
+        if st.button("➡️ Reveal next option"):
+            st.session_state.visible_counts[cur] = visible_n + 1
+            _rerun()
+
+# Προαιρετικό: reset reveal για την τρέχουσα
+with reset_col:
+    if st.button("🔁 Reset options for this question"):
+        st.session_state.visible_counts[cur] = 1
+        # Αν η απάντηση που είχε επιλεγεί δεν είναι πλέον ορατή, καθάρισέ την
+        chosen = st.session_state.get(f"q{cur}")
+        if chosen and chosen not in q["opts"][:1]:
+            st.session_state.pop(f"q{cur}", None)
+        _rerun()
+
+st.markdown("---")
+
+# ------------------ Navigation ------------------
 nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
 
 with nav_prev:
@@ -176,14 +208,15 @@ with nav_finish:
 
 # ------------------ New set ------------------
 st.markdown("---")
-col_new, col_jump = st.columns([0.3, 0.7])
+col_new, _ = st.columns([0.3, 0.7])
 with col_new:
     if st.button("🎲 New Random 15"):
-        # καθάρισε επιλογές & ξαναφτιάξε 15άδα
+        # καθάρισε επιλογές & ξαναφτιάξε 15άδα και visible counts
         for j in range(1, len(quiz)+1):
             st.session_state.pop(f"q{j}", None)
         st.session_state.quiz = build_quiz(df)
         st.session_state.current_i = 1
+        st.session_state.visible_counts = {j: 1 for j in range(1, len(st.session_state.quiz) + 1)}
         _rerun()
 
 # ------------------ Leaderboard (session) ------------------
