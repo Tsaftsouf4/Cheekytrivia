@@ -1,5 +1,5 @@
 # ==============================
-# Cheeky Gamblers Trivia (Player)
+# Cheeky Gamblers Trivia (One-by-one)
 # ==============================
 
 import streamlit as st
@@ -10,7 +10,7 @@ from datetime import datetime
 # ------------------ Page / Theme ------------------
 st.set_page_config(
     page_title="Cheeky Gamblers Trivia",
-    page_icon="cheeky_logo.png",   # Βάλε το αρχείο στο root του repo
+    page_icon="cheeky_logo.png",   # βάλε το αρχείο στο root του repo
     layout="wide",
 )
 
@@ -57,14 +57,14 @@ st.caption("15 random questions per round • Multiple choice • Stream-safe")
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
 def build_quiz(df: pd.DataFrame):
-    """Φτιάχνει σετ 15 ερωτήσεων από το Excel, χωρίς shuffle στις επιλογές."""
+    """Φτιάχνει σετ 15 ερωτήσεων από το Excel (χωρίς shuffle)."""
     sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     quiz = []
     for _, r in sample.iterrows():
-        opts = [r["Answer 1"], r["Answer 2"], r["Answer 3"], r["Answer 4"]]
+        opts = [str(r["Answer 1"]), str(r["Answer 2"]), str(r["Answer 3"]), str(r["Answer 4"])]
         quiz.append({
             "q": str(r["Question"]),
-            "opts": [str(x) for x in opts],
+            "opts": opts,
             "correct": str(r["Correct Answer"])
         })
     return quiz
@@ -118,46 +118,72 @@ if not all(c in df.columns for c in REQUIRED_COLS):
 # Δημιούργησε quiz μία φορά
 if "quiz" not in st.session_state:
     st.session_state.quiz = build_quiz(df)
+    st.session_state.current_i = 1  # 1-based index
+    # καθάρισε τυχόν προηγούμενες απαντήσεις
+    for j in range(1, len(st.session_state.quiz) + 1):
+        st.session_state.pop(f"q{j}", None)
+
+quiz = st.session_state.quiz
+total_q = len(quiz)
+cur = st.session_state.get("current_i", 1)
+cur = max(1, min(total_q, cur))
+
+# ------------------ Progress header ------------------
+answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
+progress = answered / max(1, total_q)
+st.progress(progress, text=f"Answered {answered}/{total_q}")
 
 st.markdown("---")
 
-# ------------------ Questions ------------------
-answers = []
-for i, item in enumerate(st.session_state.quiz, start=1):
-    choice = st.radio(
-        f"{i}. {item['q']}",
-        item["opts"],
-        index=None,
-        key=f"q{i}",
-    )
-    answers.append(choice)
+# ------------------ Render single question ------------------
+q = quiz[cur - 1]
+st.subheader(f"Question {cur}/{total_q}")
+choice = st.radio(q["q"], q["opts"], index=None, key=f"q{cur}")
 
-# ------------------ Actions (Submit / New Random 15) ------------------
-col1, col2 = st.columns(2)
+nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
 
-with col1:
-    if st.button("✅ Submit"):
-        score = sum((ans == q["correct"]) for ans, q in zip(answers, st.session_state.quiz))
-        total = len(st.session_state.quiz)
-        st.subheader(f"Score this round: {score}/{total}")
-        if score == total:
+with nav_prev:
+    if st.button("⬅️ Previous", disabled=(cur == 1)):
+        st.session_state.current_i = max(1, cur - 1)
+        _rerun()
+
+with nav_next:
+    # next ενεργό μόνο αν απαντήθηκε η τρέχουσα
+    next_disabled = st.session_state.get(f"q{cur}") is None or cur == total_q
+    if st.button("➡️ Next", disabled=next_disabled):
+        st.session_state.current_i = min(total_q, cur + 1)
+        _rerun()
+
+with nav_finish:
+    # επιτρέπουμε finish όταν έχουν απαντηθεί όλες
+    all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
+    if st.button("✅ Finish round", disabled=not all_answered):
+        # υπολογισμός σκορ
+        answers = [st.session_state.get(f"q{j}") for j in range(1, total_q+1)]
+        score = sum((ans == quiz[j-1]["correct"]) for j, ans in enumerate(answers, start=1))
+        st.subheader(f"Score this round: {score}/{total_q}")
+        if score == total_q:
             st.success("Perfect score! Claim your $250! 🏆")
 
-        add_score_row(player, score, total)
+        add_score_row(player, score, total_q)
 
         with st.expander("📘 Show answers"):
-            for j, (ans, q) in enumerate(zip(answers, st.session_state.quiz), start=1):
-                st.markdown(f"**{j}. {q['q']}**")
-                st.write(f"Your answer: {ans if ans else '—'}")
-                st.write(f"Correct: {q['correct']}")
+            for j in range(1, total_q+1):
+                st.markdown(f"**{j}. {quiz[j-1]['q']}**")
+                st.write(f"Your answer: {st.session_state.get(f'q{j}') or '—'}")
+                st.write(f"Correct: {quiz[j-1]['correct']}")
                 st.write("---")
 
-with col2:
+# ------------------ New set ------------------
+st.markdown("---")
+col_new, col_jump = st.columns([0.3, 0.7])
+with col_new:
     if st.button("🎲 New Random 15"):
         # καθάρισε επιλογές & ξαναφτιάξε 15άδα
-        for j in range(1, len(st.session_state.quiz)+1):
+        for j in range(1, len(quiz)+1):
             st.session_state.pop(f"q{j}", None)
         st.session_state.quiz = build_quiz(df)
+        st.session_state.current_i = 1
         _rerun()
 
 # ------------------ Leaderboard (session) ------------------
