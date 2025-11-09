@@ -64,15 +64,35 @@ body:before {{
 .logo img {{ height:38px; width:auto; }}
 
 /* ====== NAME TILE (top-right mini scoreboard) ====== */
-.name-tile {{
-  display:inline-block; min-width: 180px; text-align:right;
-  padding:.55rem .8rem; border-radius:10px;
-  background: linear-gradient(180deg, rgba(255,214,10,.22), rgba(255,214,10,.05));
-  color:#fff; font-weight:800; letter-spacing:.3px;
-  box-shadow: 0 0 18px rgba(255,214,10,.18), inset 0 0 0 1px rgba(255,214,10,.35);
-}}
-.name-tile .label {{ font-size:.72rem; opacity:.75; display:block; }}
-.name-tile .value {{ font-size:1.05rem; color:#fff; }}
+.name-tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  padding: 0.6rem 1rem;
+  border-radius: 12px;
+  background: rgba(255, 214, 10, 0.1);
+  border: 1px solid rgba(255, 214, 10, 0.4);
+  box-shadow: 0 0 10px rgba(255, 214, 10, 0.25), inset 0 0 8px rgba(255, 214, 10, 0.15);
+  color: #fff;
+  text-align: center;
+  font-family: 'Orbitron', sans-serif;
+}
+.name-tile .label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 0.15rem;
+}
+.name-tile .value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #FFD60A;
+  text-shadow: 0 0 6px rgba(255, 214, 10, 0.4);
+}
+
 
 /* ====== PROGRESS BAR glow ====== */
 [data-testid="stProgress"] > div > div {{
