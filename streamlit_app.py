@@ -228,11 +228,13 @@ if time_up and not st.session_state.get(f"locked_{cur}", False):
 
 # ------------------ MAIN PANEL ------------------
 st.markdown("<div class='neon-panel'>", unsafe_allow_html=True)
+st.markdown("### ")  # μικρό κενό για οπτικό χώρο
+st.markdown("**Progress**")
 
-# Progress
-answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
-st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
-st.markdown("---")
+with st.container(border=False):
+    answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
+    st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
+
 
 # Ερώτηση
 q = quiz[cur - 1]
