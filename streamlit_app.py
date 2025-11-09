@@ -20,7 +20,7 @@ BRAND_NEON = "#FF33CC"
 BRAND_DARK = "#0b0f14"
 
 # Global CSS: background, neon panel frame, progress glow, question reveal anim, small name tile
-st.markdown(f"""
+st.markdown("""
 <style>
 /* ====== BACKGROUND (image + fallback gradient) ====== */
 [data-testid="stAppViewContainer"] > .main {{
