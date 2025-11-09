@@ -1,5 +1,5 @@
 # ==============================
-# Cheeky Gamblers Trivia (One-by-one + Shuffled options)
+# Cheeky Gamblers Trivia (One-by-one + Shuffled options) — FIXED PROGRESS
 # ==============================
 
 import streamlit as st
@@ -20,7 +20,7 @@ st.markdown(f"""
 <style>
 /* Extra top space ώστε να μη "κόβεται" σε OBS/browser */
 .block-container {{
-    padding-top: 8rem;     /* ↑ ρύθμισε αν θες περισσότερο (π.χ. 10rem) */
+    padding-top: 8rem;
     padding-bottom: 2rem;
 }}
 
@@ -53,11 +53,15 @@ with right:
 
 st.caption("15 random questions per round • Multiple choice • Stream-safe")
 
-# ------------------ Constants / Helpers ------------------
+# ------------------ Helpers ------------------
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
+def _norm(x):
+    """Ομογενοποίηση κειμένου για ασφαλή σύγκριση (αποφυγή κενών/ειδικών “ ” ’)."""
+    return str(x).strip().lower().replace("’","'").replace("“","\"").replace("”","\"")
+
 def build_quiz(df: pd.DataFrame):
-    """Φτιάχνει 15άδα και SHUFFLE τις επιλογές κάθε ερώτησης (κρατάμε correct ως κείμενο)."""
+    """Φτιάχνει 15άδα και SHUFFLE τις επιλογές κάθε ερώτησης (κρατάμε correct ως κείμενο+normalized)."""
     sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     quiz = []
     for _, r in sample.iterrows():
@@ -65,8 +69,9 @@ def build_quiz(df: pd.DataFrame):
         random.shuffle(opts)  # <-- τυχαία σειρά απαντήσεων
         quiz.append({
             "q": str(r["Question"]),
-            "opts": opts,
-            "correct": str(r["Correct Answer"])  # ελέγχουμε με βάση το κείμενο
+            "opts": opts,                         # για εμφάνιση
+            "correct": str(r["Correct Answer"]),  # raw για εμφάνιση
+            "correct_norm": _norm(r["Correct Answer"])  # normalized για check
         })
     return quiz
 
@@ -112,8 +117,13 @@ except Exception as e:
     st.error(f"Could not read Excel: {e}")
     st.stop()
 
-if not all(c in df.columns for c in REQUIRED_COLS):
-    st.error(f"Missing columns. Required: {REQUIRED_COLS}")
+# καθάρισε headers/NaN για σιγουριά
+df.columns = [str(c).strip() for c in df.columns]
+df = df.fillna("")
+
+missing = [c for c in REQUIRED_COLS if c not in df.columns]
+if missing:
+    st.error(f"Missing columns: {missing}")
     st.stop()
 
 # ------------------ Init quiz state ------------------
@@ -129,17 +139,23 @@ total_q = len(quiz)
 cur = st.session_state.get("current_i", 1)
 cur = max(1, min(total_q, cur))
 
-# ------------------ Progress header ------------------
+st.markdown("---")
+
+# ------------------ Render single question + LIVE progress (FIX) ------------------
+q = quiz[cur - 1]
+st.subheader(f"Question {cur}/{total_q}")
+
+# Δίνουμε διαφορετικό key στο radio (temporary) και γράφουμε εμείς στο μόνιμο key.
+choice_temp = st.radio(q["q"], q["opts"], index=None, key=f"q{cur}_temp")
+
+# Αν επιλέχθηκε κάτι, το σώζουμε μόνιμα στο session_state (ώστε να μετράει progress αμέσως)
+if choice_temp is not None:
+    st.session_state[f"q{cur}"] = choice_temp
+
+# Υπολογισμός progress ΚΑΘΕ ΦΟΡΑ εδώ (ώστε να ανεβαίνει αμέσως)
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 progress = answered / max(1, total_q)
 st.progress(progress, text=f"Answered {answered}/{total_q}")
-
-st.markdown("---")
-
-# ------------------ Render single question ------------------
-q = quiz[cur - 1]
-st.subheader(f"Question {cur}/{total_q}")
-choice = st.radio(q["q"], q["opts"], index=None, key=f"q{cur}")
 
 st.markdown("---")
 
@@ -163,7 +179,13 @@ with nav_finish:
     all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
     if st.button("✅ Finish round", disabled=not all_answered):
         answers = [st.session_state.get(f"q{j}") for j in range(1, total_q+1)]
-        score = sum((ans == quiz[j-1]["correct"]) for j, ans in enumerate(answers, start=1))
+        score = 0
+        for j, ans in enumerate(answers, start=1):
+            if ans is None:
+                continue
+            if _norm(ans) == quiz[j-1]["correct_norm"]:
+                score += 1
+
         st.subheader(f"Score this round: {score}/{total_q}")
         if score == total_q:
             st.success("Perfect score! Claim your $250! 🏆")
