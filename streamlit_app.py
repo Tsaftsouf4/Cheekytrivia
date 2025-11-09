@@ -7,7 +7,7 @@ from datetime import datetime
 # ------------------ Page ------------------
 st.set_page_config(
     page_title="Cheeky Gamblers Trivia",
-    page_icon="cheeky_logo.png",   # προαιρετικό αρχείο στο repo
+    page_icon="cheeky_logo.png",
     layout="wide",
 )
 
@@ -140,7 +140,7 @@ def _rerun():
 
 # ------------------ Sidebar ------------------
 with st.sidebar:
-    player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba")
+    player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba", key="player")
     st.caption("Scores are stored in session memory.")
 
 # ------------------ Header row ------------------
@@ -229,7 +229,7 @@ if time_up and not st.session_state.get(f"locked_{cur}", False):
 # ------------------ MAIN PANEL ------------------
 st.markdown("<div class='neon-panel'>", unsafe_allow_html=True)
 
-# Progress
+# Progress (με text μέσα στο progress box)
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 st.markdown("---")
@@ -301,17 +301,20 @@ with nav_finish:
         else:
             st.info(f"Round complete. Score: {score}/{total_q}")
 
-        add_score_row(player, score, total_q)
+        add_score_row(st.session_state.get("player", ""), score, total_q)
 
+        # --------- HARD RESET FOR NEXT PLAYER (χωρίς re-upload) ----------
         if st.button("🎲 Next player (new 15)"):
-            # reset round
-            st.session_state.quiz = build_quiz(df)
+            st.session_state.quiz = build_quiz(df)     # νέο set 15
             st.session_state.current_i = 1
+            # καθάρισε όλες τις προηγούμενες απαντήσεις / locks
             for j in range(1, total_q+1):
                 st.session_state.pop(f"q{j}", None)
                 st.session_state.pop(f"q{j}_temp", None)
                 st.session_state.pop(f"locked_{j}", None)
             st.session_state.deadlines = {}
+            # ζήτα νέο όνομα
+            st.session_state["player"] = ""
             _rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
@@ -328,7 +331,6 @@ with st.container(border=True):
         st.dataframe(df_lb, use_container_width=True, hide_index=True)
 
 # -------- Auto refresh ανά 1s για να μετράει ορατά το timer --------
-# (χωρίς experimental apis, απλά επανατρέχει το script ανά δευτερόλεπτο)
 if remaining > 0:
     time.sleep(1)
     _rerun()
