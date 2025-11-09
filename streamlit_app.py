@@ -14,7 +14,6 @@ st.set_page_config(
 # ------------------ CSS (neon + tile + animation) ------------------
 st.markdown("""
 <style>
-/* Background (gradient + optional image overlay) */
 [data-testid="stAppViewContainer"] > .main {
   background: linear-gradient(135deg, #0b0f14 0%, #111826 60%, #001a2c 100%);
   background-attachment: fixed;
@@ -26,14 +25,12 @@ body:before {
   opacity: .15; pointer-events: none; z-index: -1;
 }
 
-/* Layout spacing */
 .block-container {
   padding-top: 6rem;
   padding-bottom: 2rem;
   max-width: 1180px;
 }
 
-/* Neon panel */
 .neon-panel {
   border-radius: 18px;
   padding: 24px 24px;
@@ -46,7 +43,6 @@ body:before {
   -webkit-backdrop-filter: blur(6px);
 }
 
-/* Name tile (small scoreboard) */
 .name-tile {
   display: inline-flex;
   flex-direction: column;
@@ -75,16 +71,13 @@ body:before {
   text-shadow: 0 0 6px rgba(255, 214, 10, 0.45);
 }
 
-/* Progress glow */
 [data-testid="stProgress"] > div > div {
   box-shadow: 0 0 16px rgba(255,214,10,.35);
   background: linear-gradient(90deg, #FFD60A, #FF33CC);
 }
 
-/* Radio spacing */
 .stRadio > div { gap: .6rem; }
 
-/* Question reveal animation */
 .q-reveal {
   animation: qslide .55s ease-out;
   color: #f1f4f8;
@@ -95,7 +88,6 @@ body:before {
   100% { filter: drop-shadow(0 0 0 rgba(255,51,204,0)); }
 }
 
-/* Little badge */
 .badge {
   display:inline-block; background:#FFD60A; color:#000;
   padding:.32rem .7rem; border-radius:.55rem; font-weight:900; letter-spacing:.3px
@@ -189,48 +181,49 @@ if missing:
     st.error(f"Missing columns: {missing}")
     st.stop()
 
-# ------------------ Init state ------------------
-if "quiz" not in st.session_state:
-    st.session_state.quiz = build_quiz(df)
-    st.session_state.current_i = 1
-    # καθαρισμός απαντήσεων
-    for j in range(1, len(st.session_state.quiz)+1):
-        st.session_state.pop(f"q{j}", None)
-    st.session_state.last_q = None
-    # timers store per question
-    st.session_state.deadlines = {}
+# ------------------ Init state (SAFE) ------------------
+# χρησιμοποιούμε setdefault για να υπάρχουν πάντα τα keys
+ss = st.session_state
+ss.setdefault("quiz", build_quiz(df))
+ss.setdefault("current_i", 1)
+ss.setdefault("last_q", None)
+ss.setdefault("deadlines", {})          # map: question_index -> epoch deadline
+# καθάρισμα temp radios αν πρώτη φορά
+for j in range(1, len(ss.quiz)+1):
+    ss.setdefault(f"q{j}", None)
+    # μην πετάμε τα temp σε κάθε run – μόνο όταν αλλάζει ερώτηση
+    ss.setdefault(f"q{j}_temp", None)
+    ss.setdefault(f"locked_{j}", False)
 
-quiz = st.session_state.quiz
+quiz = ss.quiz
 total_q = len(quiz)
-cur = max(1, min(total_q, st.session_state.get("current_i", 1)))
+cur = max(1, min(total_q, ss.get("current_i", 1)))
 
 # ------------------ Timer per question (45s) ------------------
 SECONDS_PER_Q = 45
 
 # Αν άλλαξε ερώτηση -> ξεκίνα από την αρχή το timer και ξεκλείδωσε
-if st.session_state.last_q != cur:
-    st.session_state.last_q = cur
-    now = time.time()
-    st.session_state.deadlines[cur] = now + SECONDS_PER_Q
-    st.session_state[f"locked_{cur}"] = False
-    # reset temp key για να μην κουβαλάει παλιό selection
-    st.session_state.pop(f"q{cur}_temp", None)
+if ss.get("last_q") != cur:
+    ss["last_q"] = cur
+    ss["deadlines"][cur] = time.time() + SECONDS_PER_Q
+    ss[f"locked_{cur}"] = False
+    ss.pop(f"q{cur}_temp", None)  # reset προσωρινή επιλογή στη νέα ερώτηση
 
 # Υπολόγισε πόσο μένει
 now = time.time()
-deadline = st.session_state.deadlines.get(cur, now + SECONDS_PER_Q)
+deadline = ss["deadlines"].get(cur, now + SECONDS_PER_Q)
 remaining = max(0, int(deadline - now))
 time_up = remaining <= 0
 
 # Αν τελείωσε ο χρόνος -> κλείδωσε
-if time_up and not st.session_state.get(f"locked_{cur}", False):
-    st.session_state[f"locked_{cur}"] = True
+if time_up and not ss.get(f"locked_{cur}", False):
+    ss[f"locked_{cur}"] = True
 
 # ------------------ MAIN PANEL ------------------
 st.markdown("<div class='neon-panel'>", unsafe_allow_html=True)
 
 # Progress
-answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
+answered = sum(1 for j in range(1, total_q+1) if ss.get(f"q{j}") is not None)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 st.markdown("---")
 
@@ -249,12 +242,12 @@ with timer_col2:
 st.markdown(f"<div class='q-reveal'><h3 style='margin-top:0'>{q['q']}</h3></div>", unsafe_allow_html=True)
 
 # Επιλογές (κλειδώνουν όταν μηδενίσει ο χρόνος)
-disabled_radio = st.session_state.get(f"locked_{cur}", False)
+disabled_radio = ss.get(f"locked_{cur}", False)
 choice_temp = st.radio("Pick your answer:", q["opts"], index=None, key=f"q{cur}_temp", disabled=disabled_radio)
 if choice_temp is not None and not disabled_radio:
-    st.session_state[f"q{cur}"] = choice_temp
+    ss[f"q{cur}"] = choice_temp
 
-if disabled_radio and st.session_state.get(f"q{cur}") is None:
+if disabled_radio and ss.get(f"q{cur}") is None:
     st.warning("Time's up — no answers accepted for this question.")
 
 st.markdown("---")
@@ -264,37 +257,36 @@ nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
 
 with nav_prev:
     if st.button("⬅️ Previous", disabled=(cur == 1)):
-        st.session_state.current_i = max(1, cur - 1)
+        ss["current_i"] = max(1, cur - 1)
         _rerun()
 
 with nav_next:
     # Next ενεργό αν:
     # - υπάρχει απάντηση, ή
     # - έχει λήξει ο χρόνος
-    next_enabled = (st.session_state.get(f"q{cur}") is not None) or disabled_radio
+    next_enabled = (ss.get(f"q{cur}") is not None) or disabled_radio
     next_disabled = (cur == total_q) or (not next_enabled)
     if st.button("➡️ Next", disabled=next_disabled):
-        st.session_state.current_i = min(total_q, cur + 1)
+        ss["current_i"] = min(total_q, cur + 1)
         _rerun()
 
 with nav_finish:
     # Finish όταν έχουν απαντηθεί όλες (ή έχουν λήξει) για όλες
     all_done = True
     for j in range(1, total_q+1):
-        if (st.session_state.get(f"q{j}") is None) and (not st.session_state.get(f"locked_{j}", False)):
+        if (ss.get(f"q{j}") is None) and (not ss.get(f"locked_{j}", False)):
             all_done = False
             break
     if st.button("✅ Finish round", disabled=not all_done):
         # Υπολογισμός score μόνο σε όσες έχουν answer
         score = 0
         for j in range(1, total_q+1):
-            ans = st.session_state.get(f"q{j}")
+            ans = ss.get(f"q{j}")
             if ans is None:
                 continue
             if norm(ans) == quiz[j-1]["correct_norm"]:
                 score += 1
 
-        # Perfect only celebrate
         if score == total_q:
             st.subheader(f"Perfect score: {score}/{total_q} 🎉 $250!")
             st.balloons()
@@ -305,13 +297,15 @@ with nav_finish:
 
         if st.button("🎲 Next player (new 15)"):
             # reset round
-            st.session_state.quiz = build_quiz(df)
-            st.session_state.current_i = 1
-            for j in range(1, total_q+1):
-                st.session_state.pop(f"q{j}", None)
-                st.session_state.pop(f"q{j}_temp", None)
-                st.session_state.pop(f"locked_{j}", None)
-            st.session_state.deadlines = {}
+            ss["quiz"] = build_quiz(df)
+            ss["current_i"] = 1
+            new_total = len(ss["quiz"])
+            for j in range(1, new_total+1):
+                ss.pop(f"q{j}", None)
+                ss.pop(f"q{j}_temp", None)
+                ss.pop(f"locked_{j}", None)
+            ss["deadlines"] = {}
+            ss["last_q"] = None
             _rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
@@ -328,7 +322,6 @@ with st.container(border=True):
         st.dataframe(df_lb, use_container_width=True, hide_index=True)
 
 # -------- Auto refresh ανά 1s για να μετράει ορατά το timer --------
-# (χωρίς experimental apis, απλά επανατρέχει το script ανά δευτερόλεπτο)
 if remaining > 0:
     time.sleep(1)
     _rerun()
