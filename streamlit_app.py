@@ -4,22 +4,21 @@ import time
 import random
 from pathlib import Path
 from datetime import datetime
-
 import pandas as pd
 import streamlit as st
 
 # =============================================================================
-# Page / Global
+# Page Config
 # =============================================================================
 st.set_page_config(
     page_title="Cheeky Gamblers Trivia",
-    page_icon="cheeky_logo.png",  # βάλε το αρχείο στο root του repo
+    page_icon="cheeky_logo.png",
     layout="wide",
 )
 
-# -----------------------------------------------------------------------------
-# Cache paths (για να μη χρειάζεται νέο upload σε κάθε refresh)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Cache Setup
+# =============================================================================
 CACHE_DIR = Path("_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 CACHE_PATH = CACHE_DIR / "last.xlsx"
@@ -27,15 +26,15 @@ CACHE_PATH = CACHE_DIR / "last.xlsx"
 def save_cached_file(file_bytes: bytes):
     try:
         CACHE_PATH.write_bytes(file_bytes)
-    except Exception as e:
-        st.warning(f"Couldn't write cache file: {e}")
+    except Exception:
+        pass
 
 def load_cached_file() -> bytes | None:
     try:
         if CACHE_PATH.exists():
             return CACHE_PATH.read_bytes()
-    except Exception as e:
-        st.warning(f"Couldn't read cache file: {e}")
+    except Exception:
+        return None
     return None
 
 def rerun():
@@ -44,9 +43,8 @@ def rerun():
     else:
         st.experimental_rerun()
 
-
 # =============================================================================
-# CSS
+# CSS (NEON STYLE)
 # =============================================================================
 st.markdown("""
 <style>
@@ -147,7 +145,7 @@ h1,h2,h3,h4,h5,h6,p,div,span { font-family: 'Inter', sans-serif; }
   100% {opacity:1; transform:translateY(0);}
 }
 
-/* ===== BUTTON OVERRIDES ===== */
+/* ===== BUTTONS ===== */
 div.stButton > button {
   border-radius: 10px !important;
   border: 1px solid rgba(255,214,10,0.25) !important;
@@ -158,8 +156,6 @@ div.stButton > button {
 }
 </style>
 """, unsafe_allow_html=True)
-
-
 
 # =============================================================================
 # Helpers
@@ -192,24 +188,14 @@ def add_score_row(player: str, score: int, total: int):
         {"timestamp": ts, "player": player or "Anonymous", "score": score, "total": total, "percent": percent}
     )
 
-def reset_everything(keep_file: bool = True):
-    """Πλήρες reset (για Next player). Αν keep_file=False, απαιτεί νέο upload."""
-    keys_to_keep = set()
+def reset_everything(keep_file=True):
+    keep = {"leaderboard"}
     if keep_file and "uploaded_bytes" in st.session_state:
-        keys_to_keep.update({"uploaded_bytes", "uploaded_name"})
-    # Αν ΘΕΣ να απαιτεί νέο upload σε κάθε Next player, σχολίασε την επόμενη γραμμή
-    # και αφαίρεσε τα uploaded_* από keys_to_keep.
-    # keep_file = False
-
+        keep |= {"uploaded_bytes", "uploaded_name"}
     for k in list(st.session_state.keys()):
-        if k not in keys_to_keep and k != "leaderboard":
+        if k not in keep:
             st.session_state.pop(k, None)
-
-    # (Προαιρετικό) Μηδένισε και το file_uploader ώστε να φαίνεται "άδειο"
-    # st.session_state.uploader = None
-
     rerun()
-
 
 # =============================================================================
 # Sidebar / Header
@@ -218,78 +204,47 @@ with st.sidebar:
     player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba")
     st.caption("Scores are stored in session memory.")
 
-left, right = st.columns([0.78, 0.22], vertical_alignment="center")
+left, right = st.columns([0.78, 0.22])
 with left:
     c1, c2 = st.columns([0.08, 0.92])
     with c1:
         try:
             st.image("cheeky_logo.png", use_container_width=True)
-        except Exception:
+        except:
             st.markdown("🎰")
     with c2:
         st.markdown("## Cheeky Gamblers Trivia")
         st.caption("15 random questions per round • Multiple choice • Stream-safe")
 with right:
     st.markdown(
-        f"<div class='name-tile'><span class='label'>PLAYER</span><span class='value'>{(player or '—')}</span></div>",
-        unsafe_allow_html=True
+        f"<div class='name-tile'><span class='label'>PLAYER</span><span class='value'>{player or '—'}</span></div>",
+        unsafe_allow_html=True,
     )
 
-
 # =============================================================================
-# UPLOAD / CACHE
+# Upload / Cache
 # =============================================================================
 uploaded = st.file_uploader("📂 Upload your Excel (.xlsx) file", type=["xlsx"], key="uploader")
 
 file_bytes = None
-file_name = None
-
-if uploaded is not None:
+if uploaded:
     file_bytes = uploaded.getvalue()
-    file_name = uploaded.name
     st.session_state.uploaded_bytes = file_bytes
-    st.session_state.uploaded_name = file_name
     save_cached_file(file_bytes)
-
 elif "uploaded_bytes" in st.session_state:
     file_bytes = st.session_state.uploaded_bytes
-    file_name = st.session_state.get("uploaded_name", "last.xlsx")
-
 else:
     cached = load_cached_file()
     if cached:
         file_bytes = cached
-        file_name = "last.xlsx"
 
-# quick actions
-a1, a2, a3 = st.columns([0.12, 0.14, 0.74])
-with a1:
-    if st.button("🔄 Refresh"):
-        rerun()
-with a2:
-    if st.button("🧹 Forget file"):
-        st.session_state.pop("uploaded_bytes", None)
-        st.session_state.pop("uploaded_name", None)
-        try:
-            if CACHE_PATH.exists():
-                CACHE_PATH.unlink()
-        except:
-            pass
-        rerun()
-
-# file guard
 if not file_bytes:
-    st.info("Upload an Excel (ή πάτα Refresh αν έχεις ήδη κάνει upload παλιότερα).")
-    if "leaderboard" in st.session_state and st.session_state.leaderboard:
-        st.markdown("### ")
-        with st.container(border=True):
-            st.subheader("🏆 Leaderboard (session)")
-            df_lb = pd.DataFrame(st.session_state.leaderboard)
-            df_lb = df_lb.sort_values(by=["score","percent","timestamp"], ascending=[False, False, True])
-            st.dataframe(df_lb, use_container_width=True, hide_index=True)
+    st.info("Upload Excel to start or refresh if already uploaded previously.")
     st.stop()
 
-# read excel
+# =============================================================================
+# Read Excel
+# =============================================================================
 try:
     df = pd.read_excel(io.BytesIO(file_bytes))
 except Exception as e:
@@ -297,157 +252,36 @@ except Exception as e:
     st.stop()
 
 df.columns = [str(c).strip() for c in df.columns]
-df = df.fillna("")
 missing = [c for c in REQUIRED if c not in df.columns]
 if missing:
     st.error(f"Missing columns: {missing}")
     st.stop()
 
-
 # =============================================================================
-# Init session state
+# Init Quiz
 # =============================================================================
 if "quiz" not in st.session_state:
     st.session_state.quiz = build_quiz(df)
     st.session_state.current_i = 1
-    for j in range(1, len(st.session_state.quiz) + 1):
-        st.session_state.pop(f"q{j}", None)
-        st.session_state.pop(f"q{j}_temp", None)
-        st.session_state.pop(f"locked_{j}", None)
     st.session_state.last_q = None
     st.session_state.deadlines = {}
+    for j in range(1, len(st.session_state.quiz) + 1):
+        st.session_state.pop(f"q{j}", None)
 
 quiz = st.session_state.quiz
 total_q = len(quiz)
 cur = max(1, min(total_q, st.session_state.get("current_i", 1)))
 
 # =============================================================================
-# Timer per question
+# Timer
 # =============================================================================
 SECONDS_PER_Q = 45
-# start/refresh timer όταν αλλάζει ερώτηση
 if st.session_state.last_q != cur:
     st.session_state.last_q = cur
-    now = time.time()
-    st.session_state.deadlines[cur] = now + SECONDS_PER_Q
+    st.session_state.deadlines[cur] = time.time() + SECONDS_PER_Q
     st.session_state[f"locked_{cur}"] = False
     st.session_state.pop(f"q{cur}_temp", None)
 
-now = time.time()
-deadline = st.session_state.deadlines.get(cur, now + SECONDS_PER_Q)
-remaining = max(0, int(deadline - now))
-time_up = remaining <= 0
-if time_up and not st.session_state.get(f"locked_{cur}", False):
-    st.session_state[f"locked_{cur}"] = True
-
-
-# =============================================================================
-# MAIN PANEL
-# =============================================================================
-st.markdown("<div class='neon-box'>", unsafe_allow_html=True)
-
-# Progress
-answered = sum(1 for j in range(1, total_q + 1) if st.session_state.get(f"q{j}") is not None)
-st.markdown("<div class='progress-box'>", unsafe_allow_html=True)
-st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
-st.markdown("</div>", unsafe_allow_html=True)
-
-# Timer + Question section
-st.markdown("<div class='timer-box'>", unsafe_allow_html=True)
-t1, t2 = st.columns([0.16, 0.84])
-with t1:
-    st.markdown(f"**⏱️ {remaining}s**")
-with t2:
-    st.progress(remaining / SECONDS_PER_Q)
-st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("<div class='q-box'>", unsafe_allow_html=True)
-st.markdown(f"<div class='q-reveal'><h3 style='margin-top:0'>{q['q']}</h3></div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-
-# Ερώτηση + timer
-q = quiz[cur - 1]
-st.subheader(f"Question {cur}/{total_q}")
-
-t1, t2 = st.columns([0.16, 0.84])
-with t1:
-    st.markdown(f"**⏱️ {remaining}s**")
-with t2:
-    st.progress(remaining / SECONDS_PER_Q)
-
-st.markdown(f"<div class='q-reveal'><h3 style='margin-top:0'>{q['q']}</h3></div>", unsafe_allow_html=True)
-
-disabled_radio = st.session_state.get(f"locked_{cur}", False)
-choice_temp = st.radio("Pick your answer:", q["opts"], index=None, key=f"q{cur}_temp", disabled=disabled_radio)
-if choice_temp is not None and not disabled_radio:
-    st.session_state[f"q{cur}"] = choice_temp
-
-if disabled_radio and st.session_state.get(f"q{cur}") is None:
-    st.warning("Time's up — no answers accepted for this question.")
-
-st.markdown("---")
-
-# Navigation
-nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
-
-with nav_prev:
-    if st.button("⬅️ Previous", disabled=(cur == 1)):
-        st.session_state.current_i = max(1, cur - 1)
-        rerun()
-
-with nav_next:
-    next_enabled = (st.session_state.get(f"q{cur}") is not None) or disabled_radio
-    next_disabled = (cur == total_q) or (not next_enabled)
-    if st.button("➡️ Next", disabled=next_disabled):
-        st.session_state.current_i = min(total_q, cur + 1)
-        rerun()
-
-with nav_finish:
-    # all_done = answered για όσες είναι answered ή ληγμένες χωρίς απάντηση δεν χρειάζεται να περιμένεις
-    all_done = True
-    for j in range(1, total_q + 1):
-        if (st.session_state.get(f"q{j}") is None) and (not st.session_state.get(f"locked_{j}", False)):
-            all_done = False
-            break
-
-    if st.button("✅ Finish round", disabled=not all_done):
-        score = 0
-        for j in range(1, total_q + 1):
-            ans = st.session_state.get(f"q{j}")
-            if ans is None:
-                continue
-            if norm(ans) == quiz[j - 1]["correct_norm"]:
-                score += 1
-
-        if score == total_q:
-            st.subheader(f"Perfect score: {score}/{total_q} 🎉 $250!")
-            st.balloons()
-        else:
-            st.info(f"Round complete. Score: {score}/{total_q}")
-
-        add_score_row(player, score, total_q)
-
-        c1, c2 = st.columns([0.25, 0.75])
-        with c1:
-            # Full reset (ζητάει νέο όνομα). Αν θέλεις να απαιτεί νέο upload, άλλαξε keep_file=False
-            if st.button("🎲 Next player (full reset)"):
-                reset_everything(keep_file=True)
-
-st.markdown("</div>", unsafe_allow_html=True)  # close neon-panel
-
-# Leaderboard
-st.markdown("### ")
-with st.container(border=True):
-    st.subheader("🏆 Leaderboard (session)")
-    if "leaderboard" not in st.session_state or not st.session_state.leaderboard:
-        st.info("No scores yet.")
-    else:
-        df_lb = pd.DataFrame(st.session_state.leaderboard)
-        df_lb = df_lb.sort_values(by=["score", "percent", "timestamp"], ascending=[False, False, True])
-        st.dataframe(df_lb, use_container_width=True, hide_index=True)
-
-# Auto refresh κάθε 1s για να δουλεύει οπτικά το timer
-if remaining > 0:
-    time.sleep(1)
-    rerun()
+remaining = max(0, int(st.session_state.deadlines[cur] - time.time()))
+if remaining <= 0 and not st.session_state.get(f"locked_{cur}", False):
+    st.session_state[f"
