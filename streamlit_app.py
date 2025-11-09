@@ -1,13 +1,14 @@
 # ==============================
-# Cheeky Gamblers Trivia (One-by-one + Reveal options)
+# Cheeky Gamblers Trivia (One-by-one + Auto Reveal options)
 # ==============================
 
 import streamlit as st
 import pandas as pd
 import random
+import time
 from datetime import datetime
 
-# ------------------ Page / Theme ------------------
+# ------------- Page / Theme -------------
 st.set_page_config(
     page_title="Cheeky Gamblers Trivia",
     page_icon="cheeky_logo.png",   # βάλε το αρχείο στο root του repo
@@ -15,29 +16,24 @@ st.set_page_config(
 )
 
 BRAND_GOLD = "#FFD60A"
+REVEAL_EVERY_SEC = 2  # κάθε πόσα δευτερόλεπτα να ανοίγει επόμενη επιλογή
 
 st.markdown(f"""
 <style>
-/* Extra top space ώστε να μην "κόβεται" σε OBS/browser */
+/* extra top space ώστε να μη "κόβεται" επάνω */
 .block-container {{
-    padding-top: 8rem;     /* ↑ ρύθμισε αν θες περισσότερο (π.χ. 10rem) */
+    padding-top: 8rem;
     padding-bottom: 2rem;
 }}
-
-/* Header */
 .badge {{
   display:inline-block; background:{BRAND_GOLD}; color:#000;
   padding:.28rem .6rem; border-radius:.55rem; font-weight:900; letter-spacing:.3px
 }}
 .app-title {{ font-size:1.9rem; font-weight:800; margin:0; }}
-.logo img {{ height:38px; width:auto; }}
-
-/* Πιο καθαρά τα radios */
 .stRadio > div{{ gap:.5rem; }}
 </style>
 """, unsafe_allow_html=True)
 
-# Header (logo + τίτλος + badge)
 left, right = st.columns([0.86, 0.14])
 with left:
     c1, c2 = st.columns([0.06, 0.94])
@@ -53,11 +49,11 @@ with right:
 
 st.caption("15 random questions per round • Multiple choice • Stream-safe")
 
-# ------------------ Constants / Helpers ------------------
+# ------------- Helpers -------------
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
 def build_quiz(df: pd.DataFrame):
-    """Φτιάχνει σετ 15 ερωτήσεων από το Excel (χωρίς shuffle στις επιλογές)."""
+    """Φτιάχνει 15άδα από το Excel (χωρίς shuffle στις επιλογές)."""
     sample = df.sample(n=min(15, len(df)), random_state=random.randrange(10**9)).reset_index(drop=True)
     quiz = []
     for _, r in sample.iterrows():
@@ -65,12 +61,11 @@ def build_quiz(df: pd.DataFrame):
         quiz.append({
             "q": str(r["Question"]),
             "opts": opts,
-            "correct": str(r["Correct Answer"])
+            "correct": str(r["Correct Answer"]),
         })
     return quiz
 
 def add_score_row(player: str, score: int, total: int):
-    """Απλός leaderboard σε session."""
     percent = round(100 * score / max(1, total), 2)
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     if "leaderboard" not in st.session_state:
@@ -85,17 +80,16 @@ def _rerun():
     else:
         st.experimental_rerun()
 
-# ------------------ Sidebar ------------------
+# ------------- Sidebar -------------
 with st.sidebar:
     player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba")
     st.caption("Leaderboard αποθηκεύεται προσωρινά (session only).")
 
-# ------------------ Upload ------------------
+# ------------- Upload -------------
 uploaded = st.file_uploader("📂 Upload your Excel (.xlsx) file", type=["xlsx"])
 
 if uploaded is None:
     st.info("Upload an Excel with columns: #, Question, Answer 1–4, Correct Answer.")
-    # δείξε leaderboard αν υπάρχει
     if "leaderboard" in st.session_state and st.session_state.leaderboard:
         st.markdown("---")
         st.subheader("🏆 Leaderboard (session)")
@@ -104,7 +98,7 @@ if uploaded is None:
         st.dataframe(df_lb, use_container_width=True, hide_index=True)
     st.stop()
 
-# ------------------ Read Excel ------------------
+# ------------- Read Excel -------------
 try:
     df = pd.read_excel(uploaded)
 except Exception as e:
@@ -115,63 +109,66 @@ if not all(c in df.columns for c in REQUIRED_COLS):
     st.error(f"Missing columns. Required: {REQUIRED_COLS}")
     st.stop()
 
-# ------------------ Init quiz state ------------------
+# ------------- Init quiz state -------------
 if "quiz" not in st.session_state:
     st.session_state.quiz = build_quiz(df)
-    st.session_state.current_i = 1  # 1-based index
-    # καθάρισε τυχόν προηγούμενες απαντήσεις
+    st.session_state.current_i = 1  # 1-based
+    # καθάρισμα προηγούμενων απαντήσεων
     for j in range(1, len(st.session_state.quiz) + 1):
         st.session_state.pop(f"q{j}", None)
-    # για το "reveal μία-μία", κρατάμε πόσες επιλογές είναι ορατές για κάθε ερώτηση
-    st.session_state.visible_counts = {j: 1 for j in range(1, len(st.session_state.quiz) + 1)}
+    # timers για κάθε ερώτηση (πότε ξεκίνησε για auto reveal)
+    st.session_state.q_start_ts = {}       # question -> start timestamp
+    st.session_state.reveal_done = {}      # question -> bool
+    st.session_state.visible_counts = {}   # πόσες επιλογές φαίνονται (κεκλεισμένο με timer)
 
 quiz = st.session_state.quiz
 total_q = len(quiz)
 cur = st.session_state.get("current_i", 1)
 cur = max(1, min(total_q, cur))
 
-# ------------------ Progress header ------------------
+# όταν αλλάζουμε ερώτηση, reset timer ώστε το reveal να ξεκινά από την αρχή
+if "last_q" not in st.session_state:
+    st.session_state.last_q = None
+if st.session_state.last_q != cur:
+    st.session_state.q_start_ts[cur] = time.time()
+    st.session_state.reveal_done[cur] = False
+    st.session_state.visible_counts[cur] = 1
+    st.session_state.last_q = cur
+
+# ------------- Progress -------------
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 progress = answered / max(1, total_q)
 st.progress(progress, text=f"Answered {answered}/{total_q}")
-
 st.markdown("---")
 
-# ------------------ Render single question ------------------
+# ------------- Render single question -------------
 q = quiz[cur - 1]
-visible_n = st.session_state.visible_counts.get(cur, 1)
-visible_n = max(1, min(4, visible_n))  # always 1..4
 
 st.subheader(f"Question {cur}/{total_q}")
 st.markdown(f"### ❓ {q['q']}")
 
-# ΜΟΝΟ όσες επιλογές έχουν αποκαλυφθεί
+# Υπολογισμός ορατών επιλογών βάσει χρόνου από q_start_ts
+start_ts = st.session_state.q_start_ts.get(cur, time.time())
+elapsed = time.time() - start_ts
+visible_n = min(1 + int(elapsed // REVEAL_EVERY_SEC), 4)
+
+# ενημέρωση state
+st.session_state.visible_counts[cur] = visible_n
+
+# όσο δεν έχουν αποκαλυφθεί όλες, κάνε auto-refresh ανά 1s
+if visible_n < 4 and not st.session_state.reveal_done.get(cur, False):
+    st.autorefresh(interval=1000, key=f"autor_{cur}")
+else:
+    st.session_state.reveal_done[cur] = True
+
 opts_visible = q["opts"][:visible_n]
 
-# Επιλογή απάντησης (radio) με μόνο τις αποκαλυμμένες επιλογές
+# επιλογή απάντησης (radio) μόνο μέσα από τις ήδη ορατές
 choice = st.radio("Pick your answer:", opts_visible, index=None, key=f"q{cur}")
-
-# Κουμπί για επόμενη αποκάλυψη επιλογής
-reveal_col, reset_col = st.columns([0.28, 0.72])
-with reveal_col:
-    if visible_n < 4:
-        if st.button("➡️ Reveal next option"):
-            st.session_state.visible_counts[cur] = visible_n + 1
-            _rerun()
-
-# Προαιρετικό: reset reveal για την τρέχουσα
-with reset_col:
-    if st.button("🔁 Reset options for this question"):
-        st.session_state.visible_counts[cur] = 1
-        # Αν η απάντηση που είχε επιλεγεί δεν είναι πλέον ορατή, καθάρισέ την
-        chosen = st.session_state.get(f"q{cur}")
-        if chosen and chosen not in q["opts"][:1]:
-            st.session_state.pop(f"q{cur}", None)
-        _rerun()
 
 st.markdown("---")
 
-# ------------------ Navigation ------------------
+# ------------- Navigation -------------
 nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
 
 with nav_prev:
@@ -180,17 +177,14 @@ with nav_prev:
         _rerun()
 
 with nav_next:
-    # next ενεργό μόνο αν απαντήθηκε η τρέχουσα
     next_disabled = st.session_state.get(f"q{cur}") is None or cur == total_q
     if st.button("➡️ Next", disabled=next_disabled):
         st.session_state.current_i = min(total_q, cur + 1)
         _rerun()
 
 with nav_finish:
-    # επιτρέπουμε finish όταν έχουν απαντηθεί όλες
     all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
     if st.button("✅ Finish round", disabled=not all_answered):
-        # υπολογισμός σκορ
         answers = [st.session_state.get(f"q{j}") for j in range(1, total_q+1)]
         score = sum((ans == quiz[j-1]["correct"]) for j, ans in enumerate(answers, start=1))
         st.subheader(f"Score this round: {score}/{total_q}")
@@ -206,20 +200,22 @@ with nav_finish:
                 st.write(f"Correct: {quiz[j-1]['correct']}")
                 st.write("---")
 
-# ------------------ New set ------------------
+# ------------- New set -------------
 st.markdown("---")
 col_new, _ = st.columns([0.3, 0.7])
 with col_new:
     if st.button("🎲 New Random 15"):
-        # καθάρισε επιλογές & ξαναφτιάξε 15άδα και visible counts
         for j in range(1, len(quiz)+1):
             st.session_state.pop(f"q{j}", None)
         st.session_state.quiz = build_quiz(df)
         st.session_state.current_i = 1
-        st.session_state.visible_counts = {j: 1 for j in range(1, len(st.session_state.quiz) + 1)}
+        st.session_state.q_start_ts = {}
+        st.session_state.reveal_done = {}
+        st.session_state.visible_counts = {}
+        st.session_state.last_q = None
         _rerun()
 
-# ------------------ Leaderboard (session) ------------------
+# ------------- Leaderboard -------------
 st.markdown("---")
 st.subheader("🏆 Leaderboard (session)")
 if "leaderboard" not in st.session_state or not st.session_state.leaderboard:
