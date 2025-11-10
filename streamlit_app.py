@@ -6,6 +6,7 @@ import streamlit as st
 import pandas as pd
 import random
 from datetime import datetime
+from io import BytesIO  # >>> για αποθήκευση/φόρτωμα αρχείου από session
 
 # ------------------ Page / Theme ------------------
 st.set_page_config(
@@ -37,22 +38,6 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# Header (logo + τίτλος + badge)
-left, right = st.columns([0.86, 0.14])
-with left:
-    c1, c2 = st.columns([0.06, 0.94])
-    with c1:
-        try:
-            st.image("cheeky_logo.png", use_container_width=True)
-        except Exception:
-            st.markdown("🎰")
-    with c2:
-        st.markdown("<div class='app-title'>Cheeky Gamblers Trivia</div>", unsafe_allow_html=True)
-with right:
-    st.markdown("<div style='text-align:right'><span class='badge'>$250</span> for 15/15</div>", unsafe_allow_html=True)
-
-st.caption("15 random questions per round • Multiple choice • Stream-safe")
-
 # ------------------ Helpers ------------------
 REQUIRED_COLS = ["#", "Question", "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Correct Answer"]
 
@@ -66,12 +51,12 @@ def build_quiz(df: pd.DataFrame):
     quiz = []
     for _, r in sample.iterrows():
         opts = [str(r["Answer 1"]), str(r["Answer 2"]), str(r["Answer 3"]), str(r["Answer 4"])]
-        random.shuffle(opts)  # <-- τυχαία σειρά απαντήσεων
+        random.shuffle(opts)
         quiz.append({
             "q": str(r["Question"]),
-            "opts": opts,                         # για εμφάνιση
-            "correct": str(r["Correct Answer"]),  # raw για εμφάνιση
-            "correct_norm": _norm(r["Correct Answer"])  # normalized για check
+            "opts": opts,
+            "correct": str(r["Correct Answer"]),
+            "correct_norm": _norm(r["Correct Answer"])
         })
     return quiz
 
@@ -91,15 +76,51 @@ def _rerun():
     else:
         st.experimental_rerun()
 
+def _clear_answers():
+    """>>> Καθαρισμός όλων των απαντήσεων q1..qN"""
+    if "quiz" in st.session_state:
+        for j in range(1, len(st.session_state.quiz) + 1):
+            st.session_state.pop(f"q{j}", None)
+
+def _reset_quiz(df):
+    """>>> Reset: νέα 15άδα, καθαρισμός απαντήσεων, επιστροφή στην 1η ερώτηση."""
+    st.session_state.quiz = build_quiz(df)
+    st.session_state.current_i = 1
+    _clear_answers()
+
+# ------------------ Header (logo + τίτλος + badge) ------------------
+left, right = st.columns([0.86, 0.14])
+with left:
+    c1, c2 = st.columns([0.06, 0.94])
+    with c1:
+        try:
+            st.image("cheeky_logo.png", use_container_width=True)
+        except Exception:
+            st.markdown("🎰")
+    with c2:
+        st.markdown("<div class='app-title'>Cheeky Gamblers Trivia</div>", unsafe_allow_html=True)
+with right:
+    st.markdown("<div style='text-align:right'><span class='badge'>$250</span> for 15/15</div>", unsafe_allow_html=True)
+
+st.caption("15 random questions per round • Multiple choice • Stream-safe")
+
 # ------------------ Sidebar ------------------
 with st.sidebar:
-    player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba")
+    # >>> Κρατάμε το προηγούμενο όνομα για να ανιχνεύουμε αλλαγή
+    prev_player = st.session_state.get("prev_player", "")
+    player = st.text_input("Player name", placeholder="e.g., Tsaf / Saro / SlotMamba", key="player")
     st.caption("Leaderboard αποθηκεύεται προσωρινά (session only).")
 
-# ------------------ Upload ------------------
-uploaded = st.file_uploader("📂 Upload your Excel (.xlsx) file", type=["xlsx"])
+# ------------------ Upload (Persist file in session) ------------------
+uploaded = st.file_uploader("📂 Upload your Excel (.xlsx) file", type=["xlsx"], key="uploader")
 
-if uploaded is None:
+# >>> Αν ανέβηκε νέο αρχείο, το αποθηκεύουμε ως bytes στο session
+if uploaded is not None:
+    st.session_state["xlsx_bytes"] = uploaded.getvalue()
+    st.session_state["xlsx_name"] = uploaded.name
+
+# >>> Αν δεν υπάρχει αρχείο στο session, ζητάμε upload και σταματάμε
+if "xlsx_bytes" not in st.session_state:
     st.info("Upload an Excel with columns: #, Question, Answer 1–4, Correct Answer.")
     # δείξε leaderboard αν υπάρχει
     if "leaderboard" in st.session_state and st.session_state.leaderboard:
@@ -110,9 +131,9 @@ if uploaded is None:
         st.dataframe(df_lb, use_container_width=True, hide_index=True)
     st.stop()
 
-# ------------------ Read Excel ------------------
+# >>> Διαβάζουμε το αποθηκευμένο αρχείο από το session (όχι από το widget)
 try:
-    df = pd.read_excel(uploaded)
+    df = pd.read_excel(BytesIO(st.session_state["xlsx_bytes"]))
 except Exception as e:
     st.error(f"Could not read Excel: {e}")
     st.stop()
@@ -128,11 +149,16 @@ if missing:
 
 # ------------------ Init quiz state ------------------
 if "quiz" not in st.session_state:
-    st.session_state.quiz = build_quiz(df)
-    st.session_state.current_i = 1  # 1-based index
-    # καθάρισε τυχόν προηγούμενες απαντήσεις
-    for j in range(1, len(st.session_state.quiz) + 1):
-        st.session_state.pop(f"q{j}", None)
+    _reset_quiz(df)  # >>> αρχικοποίηση κουίζ
+
+# >>> Αν άλλαξε το όνομα παίκτη, κάνε reset MΟΝΟ όταν είναι διαφορετικό και όχι κενό
+if player and player != prev_player:
+    _reset_quiz(df)
+    st.session_state["prev_player"] = player  # ενημέρωση previous
+
+# Αν δεν έχει οριστεί ποτέ prev_player, ορίζουμε τρέχον (για την πρώτη φορά)
+if "prev_player" not in st.session_state:
+    st.session_state["prev_player"] = player or ""
 
 quiz = st.session_state.quiz
 total_q = len(quiz)
@@ -141,7 +167,7 @@ cur = max(1, min(total_q, cur))
 
 st.markdown("---")
 
-# ------------------ Render single question + LIVE progress (FIX) ------------------
+# ------------------ Render single question + LIVE progress ------------------
 q = quiz[cur - 1]
 st.subheader(f"Question {cur}/{total_q}")
 
@@ -203,10 +229,7 @@ st.markdown("---")
 col_new, _ = st.columns([0.3, 0.7])
 with col_new:
     if st.button("🎲 New Random 15"):
-        for j in range(1, len(quiz)+1):
-            st.session_state.pop(f"q{j}", None)
-        st.session_state.quiz = build_quiz(df)  # <-- ξανακάνει shuffle στις επιλογές
-        st.session_state.current_i = 1
+        _reset_quiz(df)  # >>> ξανακάνει shuffle στις επιλογές και καθαρίζει απαντήσεις
         _rerun()
 
 # ------------------ Leaderboard (session) ------------------
