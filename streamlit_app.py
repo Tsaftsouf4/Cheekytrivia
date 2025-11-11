@@ -180,36 +180,17 @@ st.write("")  # μικρό κενό
 _start_deadline_if_absent(cur)
 remaining = _remaining_secs(cur)
 
-# Auto-lock & auto-next αν μηδενίσει και δεν απαντήθηκε
-if remaining == 0 and st.session_state.get(f"q{cur}") is None and not _is_locked(cur):
-    _lock_question(cur)
-    if cur < total_q:
-        st.session_state.current_i = cur + 1
-    _rerun()
-
 # ------------------ Render Question ------------------
 q = quiz[cur - 1]
 st.subheader(f"Question {cur}/{total_q}")
 
-# Timer display (ζωντανό)
+# Timer placeholder (θα ενημερωθεί αμέσως μετά)
 timer_holder = st.empty()
-if not _is_locked(cur) and st.session_state.get(f"q{cur}") is None:
-    timer_holder.markdown(f"⏳ <span class='timer'>Time left: {remaining}s</span>", unsafe_allow_html=True)
-    if remaining > 0:
-        time.sleep(1)
-        _rerun()
-else:
-    if _is_locked(cur) and st.session_state.get(f"q{cur}") is None:
-        timer_holder.markdown("⌛ **Time’s up!** (locked)", unsafe_allow_html=True)
-    else:
-        timer_holder.markdown("✅ Answered", unsafe_allow_html=True)
 
-# Radio (με προ-επιλογή αν έχει απαντηθεί) — disabled αν κλειδωμένο ή ήδη απαντημένο
+# Radio (disabled αν κλειδωμένο ή ήδη απαντημένο)
 radio_disabled = _is_locked(cur) or (st.session_state.get(f"q{cur}") is not None)
 prev_choice = st.session_state.get(f"q{cur}")
-default_index = None
-if prev_choice in q["opts"]:
-    default_index = q["opts"].index(prev_choice)
+default_index = q["opts"].index(prev_choice) if prev_choice in q["opts"] else None
 
 choice_temp = st.radio(
     label=q["q"],
@@ -222,11 +203,32 @@ choice_temp = st.radio(
 if choice_temp is not None and not radio_disabled:
     st.session_state[f"q{cur}"] = choice_temp
 
+# Ενημέρωση timer UI (ΤΩΡΑ, αφού σχεδιάσαμε τα controls)
+if _is_locked(cur) and st.session_state.get(f"q{cur}") is None:
+    timer_holder.markdown("⌛ **Time’s up!** (locked)", unsafe_allow_html=True)
+elif st.session_state.get(f"q{cur}") is not None:
+    timer_holder.markdown("✅ Answered", unsafe_allow_html=True)
+else:
+    timer_holder.markdown(f"⏳ <span class='timer'>Time left: {remaining}s</span>", unsafe_allow_html=True)
+
+# Αν ο χρόνος έληξε χωρίς απάντηση -> lock & (προαιρετικά) auto-next
+if remaining == 0 and st.session_state.get(f"q{cur}") is None and not _is_locked(cur):
+    _lock_question(cur)
+    if cur < total_q:
+        st.session_state.current_i = cur + 1  # βγάλ’ το αν δεν θες auto-next
+    _rerun()
+
 # Progress
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 
 st.markdown("---")
+
+# Ζωντανή αντίστροφη (META το render των controls)
+if st.session_state.get(f"q{cur}") is None and not _is_locked(cur) and remaining > 0:
+    time.sleep(1)
+    _rerun()
+
 
 # ------------------ Navigation ------------------
 nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
