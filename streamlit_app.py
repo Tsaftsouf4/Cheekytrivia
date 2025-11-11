@@ -1,5 +1,5 @@
 # ==============================
-# Cheeky Gamblers Trivia — One-by-one, Shuffled options, 60s Timer
+# Cheeky Gamblers Trivia — One-by-one, Shuffled, 60s Timer, Confirm-on-Next, 10s Beep
 # ==============================
 
 import streamlit as st
@@ -8,6 +8,7 @@ import random
 import time
 from datetime import datetime
 from io import BytesIO
+import streamlit.components.v1 as components
 
 # ------------------ Page / Theme ------------------
 st.set_page_config(
@@ -27,10 +28,10 @@ st.markdown(f"""
 .app-title {{ font-size:2rem; font-weight:800; margin:0; }}
 .logo img {{ height:40px; width:auto; }}
 .stRadio > div{{ gap:.5rem; }}
-.timer {{ font-weight:800; }}
 .player-box {{ border:1px solid rgba(255,255,255,.12); padding:.5rem .75rem; border-radius:.6rem;
   display:inline-flex; gap:.5rem; align-items:center; background:rgba(255,255,255,.03); }}
 .player-dot {{ width:.55rem; height:.55rem; border-radius:999px; background:{BRAND_GOLD}; display:inline-block; }}
+.hint {{ opacity:.8; font-size:.9rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -69,8 +70,8 @@ def _rerun():
 def _clear_answers_and_timers():
     if "quiz" in st.session_state:
         for j in range(1, len(st.session_state.quiz) + 1):
-            st.session_state.pop(f"q{j}", None)
-            st.session_state.pop(f"q{j}_locked", None)
+            for key in (f"q{j}", f"q{j}_temp", f"q{j}_locked", f"q{j}_beeped"):
+                st.session_state.pop(key, None)
     st.session_state.pop("deadlines", None)
 
 def _reset_quiz(df):
@@ -99,6 +100,26 @@ def _lock_question(i):
 
 def _is_locked(i):
     return bool(st.session_state.get(f"q{i}_locked", False))
+
+def _beep():
+    """Παίζει έναν σύντομο beep (Web Audio API) – δεν χρειάζεται αρχείο."""
+    components.html("""
+    <script>
+      (function() {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = "sine";
+          o.frequency.value = 1000;     // 1 kHz
+          o.connect(g); g.connect(ctx.destination);
+          g.gain.setValueAtTime(0.15, ctx.currentTime);
+          o.start();
+          o.stop(ctx.currentTime + 0.20); // 200 ms beep
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
+    """, height=0, width=0)
 
 # ------------------ Header ------------------
 left, right = st.columns([0.86, 0.14])
@@ -173,27 +194,30 @@ st.markdown(
     f"<b>Player:</b> {player or 'Anonymous'}</div>",
     unsafe_allow_html=True
 )
+st.write("")
 
-st.write("")  # μικρό κενό
-
-# ------------------ TIMER start/track ------------------
 # ------------------ TIMER start/track ------------------
 _start_deadline_if_absent(cur)
 remaining = _remaining_secs(cur)
-elapsed = QUESTION_TIME_SEC - remaining
-pct_left = remaining / QUESTION_TIME_SEC  # 1.0 -> 0.0 όσο περνά ο χρόνος
+pct_left = remaining / QUESTION_TIME_SEC
 
 # ------------------ Render Question ------------------
 q = quiz[cur - 1]
 st.subheader(f"Question {cur}/{total_q}")
 
-# Progress timer placeholder (bar)
+# Timer as PROGRESS BAR (πάνω από τις επιλογές)
 timer_bar = st.empty()
 
-# Radio (disabled αν κλειδωμένο ή ήδη απαντημένο)
+# Radio (PROVISIONAL selection only; final on Next/Finish)
 radio_disabled = _is_locked(cur) or (st.session_state.get(f"q{cur}") is not None)
-prev_choice = st.session_state.get(f"q{cur}")
-default_index = q["opts"].index(prev_choice) if prev_choice in q["opts"] else None
+prev_choice_final = st.session_state.get(f"q{cur}")
+prev_choice_temp = st.session_state.get(f"q{cur}_temp")
+default_index = None
+# δείξε την προσωρινή αν υπάρχει, αλλιώς την τελική
+if prev_choice_temp in q["opts"]:
+    default_index = q["opts"].index(prev_choice_temp)
+elif prev_choice_final in q["opts"]:
+    default_index = q["opts"].index(prev_choice_final)
 
 choice_temp = st.radio(
     label=q["q"],
@@ -203,12 +227,11 @@ choice_temp = st.radio(
     disabled=radio_disabled
 )
 
+# Helper μήνυμα: έχει επιλεγεί προσωρινά αλλά όχι οριστικά
+if (st.session_state.get(f"q{cur}_temp") is not None) and (st.session_state.get(f"q{cur}") is None) and not radio_disabled:
+    st.markdown("<div class='hint'>🔒 Επιλογή αποθηκευμένη προσωρινά — πάτα <b>Next</b> για οριστικοποίηση.</div>", unsafe_allow_html=True)
 
-
-# === Timer as PROGRESS BAR ===
-# - Αν έχει απαντηθεί: full bar με μήνυμα "Answered"
-# - Αν έχει κλειδώσει: empty bar με μήνυμα "Time's up!"
-# - Αλλιώς: bar που πέφτει από 100% σε 0% και δείχνει "Time left: XXs"
+# === Timer bar states ===
 if _is_locked(cur) and st.session_state.get(f"q{cur}") is None:
     timer_bar.progress(0.0, text="⌛ Time’s up! (locked)")
 elif st.session_state.get(f"q{cur}") is not None:
@@ -216,25 +239,23 @@ elif st.session_state.get(f"q{cur}") is not None:
 else:
     timer_bar.progress(pct_left, text=f"⏳ Time left: {remaining}s")
 
-# Αν ο χρόνος έληξε χωρίς απάντηση -> lock & (προαιρετικά) auto-next
+# --- Beep στα 10s (μία φορά ανά ερώτηση) ---
+if (remaining == 10) and not st.session_state.get(f"q{cur}_beeped", False) and st.session_state.get(f"q{cur}") is None and not _is_locked(cur):
+    _beep()
+    st.session_state[f"q{cur}_beeped"] = True
+
+# Αν ο χρόνος έληξε χωρίς οριστική απάντηση -> lock & auto-next
 if remaining == 0 and st.session_state.get(f"q{cur}") is None and not _is_locked(cur):
     _lock_question(cur)
     if cur < total_q:
-        st.session_state.current_i = cur + 1  # αφαίρεσέ το αν δε θες auto-next
+        st.session_state.current_i = cur + 1   # βγάλε το αν δεν θες auto-next
     _rerun()
 
-# Progress (answered)
+# Progress (πόσες οριστικές απαντήσεις)
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 
 st.markdown("---")
-
-# Ζωντανή αντίστροφη (META το render των controls & του progress bar)
-if st.session_state.get(f"q{cur}") is None and not _is_locked(cur) and remaining > 0:
-    time.sleep(1)
-    _rerun()
-
-
 
 # ------------------ Navigation ------------------
 nav_prev, nav_next, nav_finish = st.columns([0.2, 0.2, 0.6])
@@ -245,16 +266,19 @@ with nav_prev:
         _rerun()
 
 with nav_next:
-    # Ενεργό μόνο αν έχει επιλεγεί κάτι προσωρινά
-    next_disabled = st.session_state.get(f"q{cur}_temp") is None or cur == total_q
+    # Next ενεργό μόνο αν υπάρχει προσωρινή επιλογή για την τρέχουσα
+    next_disabled = (st.session_state.get(f"q{cur}_temp") is None) or (cur == total_q)
     if st.button("➡️ Next", disabled=next_disabled):
         # Κάνε την προσωρινή επιλογή οριστική
         st.session_state[f"q{cur}"] = st.session_state.get(f"q{cur}_temp")
         st.session_state.current_i = min(total_q, cur + 1)
         _rerun()
 
-
 with nav_finish:
+    # Αν είμαστε στην τελευταία και υπάρχει μόνο προσωρινή, οριστικοποίησέ τη πριν το check
+    if cur == total_q and st.session_state.get(f"q{cur}_temp") is not None and st.session_state.get(f"q{cur}") is None:
+        st.session_state[f"q{cur}"] = st.session_state.get(f"q{cur}_temp")
+
     all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
     if st.button("✅ Finish round", disabled=not all_answered):
         answers = [st.session_state.get(f"q{j}") for j in range(1, total_q+1)]
@@ -290,3 +314,9 @@ else:
         by=["score","percent","timestamp"], ascending=[False, False, True]
     )
     st.dataframe(df_lb, use_container_width=True, hide_index=True)
+
+# ------------------ Live countdown tick (τελευταίο, μετά το render) ------------------
+# Κάνει 1 tick/δευτερόλεπτο για να κινείται η μπάρα όσο η ερώτηση είναι ανοιχτή και χωρίς οριστική απάντηση.
+if st.session_state.get(f"q{cur}") is None and not _is_locked(cur) and remaining > 0:
+    time.sleep(1)
+    _rerun()
