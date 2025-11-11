@@ -177,15 +177,18 @@ st.markdown(
 st.write("")  # μικρό κενό
 
 # ------------------ TIMER start/track ------------------
+# ------------------ TIMER start/track ------------------
 _start_deadline_if_absent(cur)
 remaining = _remaining_secs(cur)
+elapsed = QUESTION_TIME_SEC - remaining
+pct_left = remaining / QUESTION_TIME_SEC  # 1.0 -> 0.0 όσο περνά ο χρόνος
 
 # ------------------ Render Question ------------------
 q = quiz[cur - 1]
 st.subheader(f"Question {cur}/{total_q}")
 
-# Timer placeholder (θα ενημερωθεί αμέσως μετά)
-timer_holder = st.empty()
+# Progress timer placeholder (bar)
+timer_bar = st.empty()
 
 # Radio (disabled αν κλειδωμένο ή ήδη απαντημένο)
 radio_disabled = _is_locked(cur) or (st.session_state.get(f"q{cur}") is not None)
@@ -203,31 +206,35 @@ choice_temp = st.radio(
 if choice_temp is not None and not radio_disabled:
     st.session_state[f"q{cur}"] = choice_temp
 
-# Ενημέρωση timer UI (ΤΩΡΑ, αφού σχεδιάσαμε τα controls)
+# === Timer as PROGRESS BAR ===
+# - Αν έχει απαντηθεί: full bar με μήνυμα "Answered"
+# - Αν έχει κλειδώσει: empty bar με μήνυμα "Time's up!"
+# - Αλλιώς: bar που πέφτει από 100% σε 0% και δείχνει "Time left: XXs"
 if _is_locked(cur) and st.session_state.get(f"q{cur}") is None:
-    timer_holder.markdown("⌛ **Time’s up!** (locked)", unsafe_allow_html=True)
+    timer_bar.progress(0.0, text="⌛ Time’s up! (locked)")
 elif st.session_state.get(f"q{cur}") is not None:
-    timer_holder.markdown("✅ Answered", unsafe_allow_html=True)
+    timer_bar.progress(1.0, text="✅ Answered")
 else:
-    timer_holder.markdown(f"⏳ <span class='timer'>Time left: {remaining}s</span>", unsafe_allow_html=True)
+    timer_bar.progress(pct_left, text=f"⏳ Time left: {remaining}s")
 
 # Αν ο χρόνος έληξε χωρίς απάντηση -> lock & (προαιρετικά) auto-next
 if remaining == 0 and st.session_state.get(f"q{cur}") is None and not _is_locked(cur):
     _lock_question(cur)
     if cur < total_q:
-        st.session_state.current_i = cur + 1  # βγάλ’ το αν δεν θες auto-next
+        st.session_state.current_i = cur + 1  # αφαίρεσέ το αν δε θες auto-next
     _rerun()
 
-# Progress
+# Progress (answered)
 answered = sum(1 for j in range(1, total_q+1) if st.session_state.get(f"q{j}") is not None)
 st.progress(answered / max(1, total_q), text=f"Answered {answered}/{total_q}")
 
 st.markdown("---")
 
-# Ζωντανή αντίστροφη (META το render των controls)
+# Ζωντανή αντίστροφη (META το render των controls & του progress bar)
 if st.session_state.get(f"q{cur}") is None and not _is_locked(cur) and remaining > 0:
     time.sleep(1)
     _rerun()
+
 
 
 # ------------------ Navigation ------------------
