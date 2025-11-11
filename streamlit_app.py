@@ -203,8 +203,7 @@ choice_temp = st.radio(
     disabled=radio_disabled
 )
 
-if choice_temp is not None and not radio_disabled:
-    st.session_state[f"q{cur}"] = choice_temp
+
 
 # === Timer as PROGRESS BAR ===
 # - Αν έχει απαντηθεί: full bar με μήνυμα "Answered"
@@ -246,10 +245,14 @@ with nav_prev:
         _rerun()
 
 with nav_next:
-    next_disabled = st.session_state.get(f"q{cur}") is None or cur == total_q
+    # Ενεργό μόνο αν έχει επιλεγεί κάτι προσωρινά
+    next_disabled = st.session_state.get(f"q{cur}_temp") is None or cur == total_q
     if st.button("➡️ Next", disabled=next_disabled):
+        # Κάνε την προσωρινή επιλογή οριστική
+        st.session_state[f"q{cur}"] = st.session_state.get(f"q{cur}_temp")
         st.session_state.current_i = min(total_q, cur + 1)
         _rerun()
+
 
 with nav_finish:
     all_answered = all(st.session_state.get(f"q{j}") is not None for j in range(1, total_q+1))
